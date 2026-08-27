@@ -2,7 +2,7 @@
 
 Default path: load checked-in demo-report.json (no large model download).
 Optional: attempt a lightweight import of memaudit if the Space build has it;
-the demo button never downloads 7B weights.
+the demo button never downloads large model weights.
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ LINKS_MD = (
 )
 
 SCALE_BANNER = (
-    "**Scale label (mandatory):** randomly-initialized TinyDemoLM "
+    "**Scale:** randomly-initialized TinyDemoLM "
     "(hidden=64, vocab=256, 1 attention block), full fine-tune — "
-    "**not** a pretrained GPT-2 or 7B result. Canary token budget ~99% by design "
-    "so the instrument can show a positive signal (overfit check)."
+    "positive-control validation. For pretrained distilgpt2 + LoRA numbers, see "
+    "[GitHub benchmarks](https://github.com/mem-audit/memaudit/tree/main/benchmarks)."
 )
 
 
@@ -66,7 +66,7 @@ def summary_blocks(report: dict[str, Any]) -> tuple[str, str, str, str, str, str
     overall = reg.get("overall") or {}
 
     scale = demo.get("scale") or (
-        "TinyDemoLM overfit instrument check — not a 7B / pretrained result."
+        "TinyDemoLM positive-control validation."
     )
 
     membership_md = f"""

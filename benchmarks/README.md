@@ -1,6 +1,6 @@
 # memaudit LoRA benchmark
 
-Honest-budget LoRA audit on a **pretrained** small LM. Numbers are measured; scale is labeled. Not a 7B result.
+Honest-budget LoRA audit on a **pretrained** small LM (distilgpt2). Numbers are measured; scale is labeled on every row.
 
 Scoring used live `peft.disable_adapter()` (`--ref auto`) on one model copy. Runs A-D used Hugging Face `Trainer` + `MemorizationAuditCallback`; the SFT run used a live `trl.SFTTrainer` (`run_sft_benchmark.py`). CLI re-audit of the saved adapter reproduced `disable_adapter` scoring.
 
@@ -14,7 +14,7 @@ Scoring used live `peft.disable_adapter()` (`--ref auto`) on one model copy. Run
 | C | HF Trainer | 1 ep, r=8, lr 2e-4 | 80,000 (auto-grown) | **100 / 200** | 0.77% | **0.000** (0/100) | **[0.000, 0.036]** | 0.586 | 0/100 | TPR 0.000 / 0.010 / 0.010 (mean 0.007) | 753 s / 173 s |
 | D (deliberately risky config) | HF Trainer | **5 ep, r=16, lr 1e-3** | 80,000 (auto-grown) | 100 / 200 | 0.77% | **0.000** (0/100) primary | [0.000, 0.036] | **0.848** | 0/100 | **TPR 0.000 / 0.090 / 0.090** (mean 0.060) | 2,757 s / 170 s |
 
-All rows are **pretrained distilgpt2 at honest canary budget (<=1% of tokens)** -- the scale label matters: these are not 7B numbers, and the tiny overfit demo's TPR=1.0 does not belong in this table. Run C is the headline: n=100 members tightens the CI by ~6x vs n=16 (0/100 detected caps the true TPR at 3.6% with 95% confidence; 0/16 only capped it at 20.6%). Negative controls: n=200, regurgitation 0.00 in both n=100 runs.
+All rows are **pretrained distilgpt2 at honest canary budget (<=1% of tokens)** — keep that scale label when citing these numbers; the TinyDemoLM positive-control TPR=1.0 belongs in the demo table, not here. Run C is the headline: n=100 members tightens the CI by ~6x vs n=16 (0/100 detected caps the true TPR at 3.6% with 95% confidence; 0/16 caps it at 20.6%). Negative controls: n=200, regurgitation 0.00 in both n=100 runs.
 
 Run D is the honest "detected case": the primary threshold calibration still lands at 0/100, but AUC jumps 0.59 -> **0.85** and two of the three bootstrap calibrations (seeds 1, 2) detect **9/100 canaries at 1% FPR**. The risky config pushed the member distribution to the edge of the 1%-FPR operating point; single-seed reporting would have hidden that, the `stability` block does not. Reports: `benchmarks/out-n100/lora-benchmark-report.json`, `benchmarks/out-n100-risky/lora-benchmark-report.json` (both self-hash verified at write time).
 

@@ -1,8 +1,8 @@
 <!-- Launch blog post. Publish on launch day.
-     TODO before publishing: confirm PyPI link live,
-     Space URL after publish: https://huggingface.co/spaces/memaudit/memaudit-demo
-     (org: https://huggingface.co/memaudit),
-     add author byline. -->
+     Links: PyPI https://pypi.org/project/memaudit/
+     HF org https://huggingface.co/memaudit
+     Site https://ansh200516.github.io/memaudit-site/
+     Add author byline before posting. -->
 
 # Your fine-tune remembers. Here's how to measure it.
 
@@ -215,54 +215,40 @@ the numbers, we don't pay them); PII discovery; broad red-teaming; any SaaS anyt
 
 Deployment-side scanners like garak solve a different problem — what your *deployed*
 model says under public-corpus replay. memaudit generates training-side evidence about
-*your* data. They compose nicely; a canary-export bridge to garak probes is on the
-roadmap.
+*your* data. They compose nicely.
 
-## 8. Measured numbers so far — honestly labeled
+## 8. Measured numbers — labeled at scale
 
-What exists today is an end-to-end **instrument check** on a deliberately-overfit tiny
-model (randomly-initialized, hidden=64, vocab=256; canaries ≈ 99% of tokens by design so
-the instrument can show a positive signal):
+**TinyDemoLM positive control** (randomly-initialized, hidden=64, vocab=256; canaries
+deliberately dominate tokens so the instrument can show a clear hit):
 
-| Metric | Value | Scale label |
+| Metric | Value | Scale |
 |---|---|---|
-| TPR @ 1% FPR | 1.000, CI95 [0.794, 1.000] | tiny-model overfit check, 16 canaries / 100 controls |
+| TPR @ 1% FPR | 1.000, CI95 [0.794, 1.000] | TinyDemoLM, 16 canaries / 100 controls |
 | Regurgitation at 16× | 15/16 = 0.9375 | same |
 | Negative-control regurgitation | 0.000 (n=100) | same |
 | Wall clock | ~30 s end-to-end on a laptop | same |
 
-These numbers prove the pipeline detects what it should and stays silent on controls.
-They are **not** production-scale claims. A production-scale LoRA benchmark (pretrained
-multi-billion-parameter model, ≥200 inserted + ≥200 held-out canaries, repetition grid
-{1, 4, 16}, multi-seed) is being produced now:
+**Pretrained distilgpt2 + LoRA** at an honest ≤1% canary budget (measured 2026-08-27,
+Apple MPS) — including a live `trl.SFTTrainer` path and n=100 / 200-control runs. Primary
+TPR@1%FPR stays 0.000 at that budget; the risky config (Run D) shows AUC 0.848 with
+multi-seed stability. Full table: `benchmarks/README.md` and the site ¶04.
 
-<!-- BENCHMARK-TABLE: filled from benchmarks/ when available -->
+These numbers validate the instrument and the Trainer/TRL integration path. Production
+audits run locally against *your* model and data; every report carries its own scale and
+provenance.
 
-Designed compute envelope for a production audit (7B-class, ~200 canaries + 400 controls
-+ 2,000 real records): **5–20 minutes on a single 24 GB GPU** — two forward passes per
-sequence, no shadow models. That is an estimate until the benchmark lands, and we'll
-replace it with measurements the day it does.
+## 9. What's next
 
-## 9. Roadmap
-
-- **Production LoRA benchmark** — replaces the placeholder above.
-- **Frozen-vs-trainable-embeddings ablation per canary family** — no published non-DP
-  result exists; this doubles as a short paper.
-- **Multi-seed mode** with variance reporting.
-- **EDPB/CNIL report annex export** + PII flagging on exposed content (redaction stays
-  the default).
-- **PANAME alignment** when the CNIL/ANSSI/Inria library releases (autumn 2026):
-  vocabulary and attack-taxonomy mapping — PANAME-compatible evidence, produced where you
-  already train.
-- **Preference-stage re-scoring**: SFT-injected canaries re-audited after DPO — DPO-family
-  objectives memorize preference data at SFT-like rates (18–19%, Pappu et al., 2024).
-- **garak probe export** for deployment-side replay of your canaries.
+- Frozen-vs-trainable-embeddings ablation per canary family (product + short paper).
+- Preference-stage re-scoring: SFT-injected canaries re-audited after DPO.
+- Optional garak probe export for deployment-side replay of your canaries.
 
 ## 10. Try it
 
 ```bash
 pip install memaudit
-memaudit demo        # the tiny instrument check from §8, on your machine
+memaudit demo        # TinyDemoLM positive control from §8, on your machine
 ```
 
 Five lines in your training script:
@@ -279,7 +265,7 @@ trainer.train()   # writes <output_dir>/memaudit-report.json
 - Code: `https://github.com/mem-audit/memaudit`
 - PyPI: `https://pypi.org/project/memaudit/`
 - Hugging Face: `https://huggingface.co/memaudit`
-- Report demo Space (after publish): `https://huggingface.co/spaces/memaudit/memaudit-demo`
+- Site: `https://ansh200516.github.io/memaudit-site/`
 
 If you fine-tune on regulated or confidential data and want to stress the PEFT pre-flight
 against your real pipeline, we're onboarding a small number of design partners:

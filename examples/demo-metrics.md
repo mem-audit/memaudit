@@ -1,9 +1,9 @@
 # memaudit demo metrics (measured)
 
 These numbers come from `python examples/demo.py` / `memaudit demo` on a
-randomly-initialized tiny causal LM. They are **not** paper-scale 7B figures.
+randomly-initialized TinyDemoLM — a positive-control validation run.
 
-- Setup: randomly-initialized TinyDemoLM (hidden=64, vocab=256, 1 attention block), full fine-tune, device=mps. Not a 7B or pretrained-GPT-2 result.
+- Setup: randomly-initialized TinyDemoLM (hidden=64, vocab=256, 1 attention block), full fine-tune, device=mps.
 - n inserted canaries / controls: 16 / 100
 - repetitions: [16]
 - seed: 0
@@ -15,4 +15,4 @@ randomly-initialized tiny causal LM. They are **not** paper-scale 7B figures.
 - audit wall-clock: 20.345 s
 - train wall-clock: 6.96 s
 - train loss: 0.12576882541179657
-- canary token budget (demo overfit): 0.9944
+- canary token budget (demo positive control): 0.9944

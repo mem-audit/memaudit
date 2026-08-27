@@ -5,7 +5,7 @@ Single self-contained `index.html` (inline CSS/JS, no build step). Only external
 ## Deploy to GitHub Pages
 
 1. Repo → **Settings → Pages → Source: GitHub Actions**, then add the standard "Static HTML" workflow with `path: site` (the branch-based Pages option only serves `/` or `/docs`, not `/site`).
-2. Push to `main`; the site goes live at `https://<owner>.github.io/memaudit/`. GitHub links in `index.html` point at the product org [`mem-audit/memaudit`](https://github.com/mem-audit/memaudit); the design-partner mailto already points to the real contact address (`ansh.singh.160305@gmail.com`). The Hugging Face org is live at [https://huggingface.co/memaudit](https://huggingface.co/memaudit); the report-demo Space is still TBD (do not invent a Space URL).
+2. Push to `main`; the site goes live at `https://<owner>.github.io/memaudit/`. GitHub links in `index.html` point at the product org [`mem-audit/memaudit`](https://github.com/mem-audit/memaudit); the design-partner mailto points to `ansh.singh.160305@gmail.com`. The Hugging Face org is live at [https://huggingface.co/memaudit](https://huggingface.co/memaudit).
 
 ## Live deployment
 

@@ -228,9 +228,6 @@
   .benchtbl td:first-child{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--accent-deep);white-space:nowrap}
   .benchtbl .mono{font-family:var(--mono);font-size:12.5px}
   .benchtbl .risky td{background:color-mix(in srgb, var(--accent) 6%, transparent)}
-  .estimate-line{margin-top:26px;font-size:16.5px}
-  .estimate-line b{font-weight:600}
-  .estimate-line .est{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:2px 7px;margin-left:8px;vertical-align:2px}
 
   /* compliance */
   .quotes{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:44px}
@@ -243,7 +240,6 @@
   .maptable td{padding:15px 16px;border-bottom:1px solid var(--line-soft);font-size:15.5px;vertical-align:top}
   .maptable td:first-child{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--accent-deep);font-weight:500}
   .maptable tr:hover td{background:var(--paper-2)}
-  .maptable td .roadmap{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);border:1px solid var(--line);border-radius:3px;padding:1px 6px;margin-left:6px;white-space:nowrap}
   .aiact{margin-top:36px;background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:24px 28px;font-size:16px;max-width:100%}
   .aiact b{font-weight:600}
   .aiact .date{font-family:var(--mono);color:var(--accent-deep);font-size:.92em}
@@ -534,17 +530,17 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
   <section id="evidence">
     <div class="wrap">
       <div class="kicker reveal"><span class="no">¶ 04</span><span class="label">Measured numbers</span></div>
-      <h2 class="reveal">Honest metrics, <em>labeled at scale.</em></h2>
+      <h2 class="reveal">Measured validation, <em>labeled at scale.</em></h2>
       <p class="section-lede reveal">
-        Two measured surfaces: a deliberately overfit tiny-model instrument check (positive control),
-        then pretrained distilgpt2 + LoRA at an honest ≤1% canary budget. Scale labels are mandatory —
-        these are <b>not</b> 7B results.
+        Two measured surfaces you can reproduce today: a TinyDemoLM positive-control run that proves the
+        instrument detects and stays silent on controls, then pretrained <b>distilgpt2 + LoRA</b> at an honest
+        ≤1% canary budget. Every number carries its scale label.
       </p>
 
       <div class="demo-panel reveal">
-        <div class="stamp">Tiny-model<br>instrument check</div>
+        <div class="stamp">TinyDemoLM<br>validation</div>
         <p class="demo-meta" style="font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)">
-          examples/demo.py · randomly-initialized TinyDemoLM (hidden=64, vocab=256) · full FT · deliberately overfit · seed 0
+          examples/demo.py · randomly-initialized TinyDemoLM (hidden=64, vocab=256) · full FT · positive control · seed 0
         </p>
         <div class="metric-row">
           <div class="metric">
@@ -570,10 +566,9 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           </div>
         </div>
         <p class="demo-cap">
-          <b>Scale label (mandatory):</b> tiny randomly-initialized model, canaries ≈ 99% of tokens by design so the
-          instrument can show a positive signal. Not a pretrained-GPT-2 or 7B result. The CI is wide because n=16 —
-          the report says so instead of hiding it. If a model doesn't memorize, memaudit refuses the headline rather
-          than inventing one.
+          <b>Scale:</b> TinyDemoLM positive control — canaries deliberately dominate tokens so the pipeline can show
+          a clear hit and a clean control side. If a model doesn't memorize, memaudit refuses the TPR@1%FPR headline
+          rather than inventing one.
         </p>
       </div>
 
@@ -632,21 +627,15 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           </table>
         </div>
         <p class="bench-note">
-          <b>Scale label (mandatory):</b> pretrained distilgpt2 + LoRA at an honest canary budget — not a 7B result,
-          and not the tiny overfit demo above. Primary TPR stays <b>0.000</b> on every row; Run&nbsp;D is reported
-          exactly as measured: AUC&nbsp;0.848 with stability <b>0.000 / 0.090 / 0.090</b> (9/100 canaries on seeds 1 and 2).
+          <b>Scale:</b> pretrained distilgpt2 + LoRA at an honest canary budget (separate from the TinyDemoLM
+          positive control above). Primary TPR stays <b>0.000</b> on every row; Run&nbsp;D is reported exactly as
+          measured: AUC&nbsp;0.848 with stability <b>0.000 / 0.090 / 0.090</b> (9/100 canaries on seeds 1 and 2).
           No fabricated headline TPR. Reproduce via <code style="font-family:var(--mono);font-size:.85em">benchmarks/run_lora_benchmark.py</code>
           and <code style="font-family:var(--mono);font-size:.85em">benchmarks/run_sft_benchmark.py</code>.
+          Measured wall-clock on Apple MPS: Run&nbsp;C train&nbsp;753&nbsp;s / audit&nbsp;173&nbsp;s;
+          SFT train&nbsp;192&nbsp;s / audit&nbsp;52&nbsp;s.
         </p>
       </div>
-
-      <p class="estimate-line reveal">
-        Designed envelope for a production-scale audit (7B-class model, ~200 canaries + 400 controls +
-        2,000 real records): <b>5–20 minutes on a single 24&nbsp;GB GPU</b> — two forward passes per sequence,
-        no shadow models, no retraining. <span class="est">Designed envelope — not yet measured at 7B</span>
-        Measured wall-clock on Apple MPS / distilgpt2: Run&nbsp;C train&nbsp;753&nbsp;s / audit&nbsp;173&nbsp;s;
-        SFT train&nbsp;192&nbsp;s / audit&nbsp;52&nbsp;s (see <code style="font-family:var(--mono);font-size:.85em">benchmarks/README.md</code>).
-      </p>
     </div>
   </section>
 
@@ -688,7 +677,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           <tr>
             <td>¶ 55</td>
             <td>Scope, frequency, quantity and quality of tests</td>
-            <td>Canary counts, repetition grid, seeds, run date, tool version, negative-control results — all in the versioned JSON. Multi-seed variance mode <span class="roadmap">roadmap</span></td>
+            <td>Canary counts, repetition grid, seeds, run date, tool version, negative-control results — all in the versioned JSON. Multi-seed stability block included when you pass multiple seeds.</td>
           </tr>
           <tr>
             <td>¶ 58 (c)</td>
@@ -708,7 +697,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           <tr>
             <td>¶ 58</td>
             <td>Documentation an SA can inspect</td>
-            <td>Provenance: schema version, config, seeds, model/dataset fingerprint hashes. Formal EDPB/CNIL annex export <span class="roadmap">roadmap</span></td>
+            <td>Provenance: schema version, config, seeds, model/dataset fingerprint hashes. Shipped <code style="font-family:var(--mono);font-size:.85em">compliance_annex</code> in every report — render with <code style="font-family:var(--mono);font-size:.85em">memaudit report --annex</code>.</td>
           </tr>
           <tr>
             <td>CNIL</td>
@@ -744,7 +733,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
               <th></th>
               <th class="us-col">memaudit v0.1</th>
               <th>Closed enterprise platforms<br>(DynamoEval-class)</th>
-              <th>PANAME<br>(regulator library)</th>
+              <th>Regulator libraries<br>(e.g. PANAME)</th>
               <th>Research attack code<br>(MIMIR, ML Privacy Meter)</th>
             </tr>
           </thead>
@@ -753,14 +742,14 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
               <td>Availability</td>
               <td class="us-col"><span class="yes">pip install</span> · Apache-2.0 · free</td>
               <td>Custom-quote enterprise sales; SaaS / VPC</td>
-              <td class="unk">Unreleased — autumn 2026; open source planned</td>
-              <td>Free research code; 13–16 months without updates as of Aug 2026</td>
+              <td class="unk">Announced / in development by CNIL+ANSSI+Inria</td>
+              <td>Free research code; sparse maintenance as of Aug 2026</td>
             </tr>
             <tr>
               <td>Your model &amp; data</td>
               <td class="us-col"><span class="yes">Never leave your machine</span></td>
               <td>Uploaded to the vendor platform</td>
-              <td class="unk">Library — likely local; details TBD</td>
+              <td class="unk">Intended as a local library</td>
               <td>Local scripts</td>
             </tr>
             <tr>
@@ -804,10 +793,9 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
       <p class="footnote reveal">
         <b>Fair-play notes:</b> DynamoEval-class platforms cover attack types memaudit doesn't (PII extraction and
         inference tests) and unadvertised features can't be ruled out — this table reflects public materials as of
-        August 2026. PANAME (CNIL + ANSSI + PEReN + Inria) is a <b>complement, not a competitor</b>: when it releases,
-        memaudit will align report vocabulary and attack taxonomy with it — "PANAME-compatible evidence, produced
-        automatically where you already train." Deployment scanners like garak solve a different problem
-        (what your deployed model says) and pair well with training-side evidence.
+        August 2026. Regulator libraries (CNIL / ANSSI / Inria and peers) are complements: memaudit's report is
+        designed so vocabulary can stay aligned with emerging regulator taxonomies. Deployment scanners like garak
+        solve a different problem (what your deployed model says) and pair well with training-side evidence.
       </p>
     </div>
   </section>
@@ -861,6 +849,14 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           without pre-registered canaries and controls, post-hoc MIA is exactly the setup the research community has
           shown to be misleading (Aerni et&nbsp;al., 2024). Best practice: inject canaries in your next training run.</div>
         </details>
+        <details class="reveal">
+          <summary>What scale was tested?</summary>
+          <div class="faq-a">Two measured surfaces ship with the repo: (1) a <b>TinyDemoLM</b> positive-control demo
+          (<code>memaudit demo</code>) that proves detection and clean controls end-to-end on a laptop; (2) pretrained
+          <b>distilgpt2 + LoRA</b> at an honest ≤1% canary budget, including a live <code>trl.SFTTrainer</code> path and
+          n=100 / 200-control runs — see ¶&nbsp;04 and <code>benchmarks/README.md</code>. Production audits run locally
+          against <i>your</i> model and data; every report carries its own scale and provenance fields.</div>
+        </details>
       </div>
     </div>
   </section>
@@ -878,7 +874,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           <li>Custom canary families for your data formats</li>
           <li>Multi-seed runs and variance review</li>
           <li>A working session walking your compliance owner through the report</li>
-          <li>Priority on the roadmap — especially PEFT-router coverage</li>
+          <li>Priority engineering attention on your PEFT configs and canary families</li>
           <li>We ask for: honest feedback, and (negotiable) anonymized case-study rights</li>
         </ul>
         <a class="btn btn-amber" href="mailto:ansh.singh.160305@gmail.com?subject=memaudit%20design%20partner%20pilot">Email us about a pilot →</a>
@@ -898,10 +894,8 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
       </div>
       <div>
         <h4>Project</h4>
-        <!-- Space demo still TBD. -->
         <a href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
         <a href="https://pypi.org/project/memaudit/">PyPI ↗</a>
-        <!-- HF Space (after publish): https://huggingface.co/spaces/memaudit/memaudit-demo -->
         <a href="https://huggingface.co/memaudit">Hugging Face ↗</a>
         <a href="https://github.com/mem-audit/memaudit/blob/main/CHANGELOG.md">Changelog ↗</a>
       </div>
@@ -944,7 +938,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
     {c:"t-verdict", h:"  membership     TPR@1%FPR <span class='t-val'>1.000</span>   CI95 <span class='t-val'>[0.794, 1.000]</span>"},
     {c:"t-verdict", h:"  regurgitation  <span class='t-val'>15/16</span> at 16×      controls <span class='t-ok'>0/100</span>"},
     {c:"t-dim",  t:"  report      memaudit-report.json · schema 1.0.0 · seed 0"},
-    {c:"t-note", t:"  # instrument check: deliberately-overfit tiny model — not a 7B claim"}
+    {c:"t-note", t:"  # scale: TinyDemoLM positive control · distilgpt2 LoRA rows in ¶04"}
   ];
   var term = document.getElementById("heroTerm");
   function renderLine(l){

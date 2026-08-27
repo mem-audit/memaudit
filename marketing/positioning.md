@@ -52,9 +52,9 @@ sheet, verify it against that archive first.
    attack coverage (with out-of-scope attacks named), threat models per canary family,
    seeds, controls, quantified results, limitations statement. Evidence — never a
    compliance promise.
-6. **Cost.** Estimated 5–20 minutes on one 24 GB GPU at production scale (label as
-   estimate until the benchmark lands). Canary budget ≤0.1% of tokens, ≤1 PPL point
-   published utility cost.
+6. **Cost.** Two forward passes per sequence (target + base), no shadow models.
+   Measured wall-clock on Apple MPS / distilgpt2 is in `benchmarks/README.md`. Canary
+   budget ≤0.1% of tokens target; ≤1 PPL point published utility cost at that budget.
 
 ---
 
@@ -83,19 +83,15 @@ sheet, verify it against that archive first.
   *"the category of test Dynamo AI sells to regulated enterprises, including financial
   institutions."*
 
-### "Why not wait for PANAME (the CNIL/ANSSI/Inria library)?"
+### "Why not wait for a regulator library (e.g. PANAME)?"
 
-- PANAME validates the thesis: regulators want exactly this evidence, badly enough to
-  build a library (CNIL steering/legal, PEReN development, ANSSI offensive expertise,
-  Inria scientific lead; public release autumn 2026).
-- It is **post-hoc, consortium-paced, not trainer-integrated, no announced canary
-  injection at training time, no announced PEFT-awareness** — the workflow layer is
-  empty, and that's where memaudit lives.
-- Line: **"complement, not competitor — PANAME-compatible evidence, produced
-  automatically where you already train."** When it releases we align report vocabulary
-  and attack taxonomy within weeks, and may wrap its attacks as an optional backend.
-- Never trash it. It's regulator-backed; being compatible with it is a distribution
-  asset, especially in the EU.
+- Regulator libraries validate the thesis: authorities want documented membership and
+  regurgitation evidence.
+- Public materials describe post-hoc libraries — not trainer-integrated canary injection
+  or PEFT-aware pre-flight. That workflow layer is where memaudit lives today.
+- Line: **"complement — evidence produced automatically where you already train,"** with
+  report vocabulary designed to stay alignable with emerging regulator taxonomies.
+- Never trash regulator work; compatibility is a distribution asset, especially in the EU.
 
 ### "We'll just dedup our data."
 
@@ -165,14 +161,14 @@ sheet, verify it against that archive first.
 ### Forbidden claims (hard rules)
 
 1. ~~"AI Act high-risk deadline August 2026"~~ — the date moved to Dec 2027 / Aug 2028.
-2. ~~"Fortune 1000 banks use Dynamo"~~ — unverified.
+2. Do not invent customer logos or "Fortune 1000" claims.
 3. ~~"memaudit makes you compliant"~~ — it produces test evidence; it does not make you
    compliant. Always.
 4. ~~Demo numbers without the scale label~~ — TPR 1.000 [0.794, 1.000], 15/16
    regurgitation, 0/100 controls are from a deliberately-overfit tiny randomly-initialized
    model. The label travels with the number, every time.
 5. ~~"guarantees privacy" / "proves anonymity"~~ — attack-specific evidence only (¶55).
-6. Compute cost (5–20 min / 24 GB GPU) is an **estimate** until `benchmarks/` lands.
+6. Cite measured wall-clock from `benchmarks/README.md` (distilgpt2 / MPS); do not sell unmeasured 7B envelopes.
 
 ---
 
@@ -182,10 +178,9 @@ sheet, verify it against that archive first.
 - **Who's it for?** HF/TRL fine-tuners in regulated settings, and the compliance owners
   who have to file evidence.
 - **Why now?** EDPB 28/2024 made the testing the GDPR evidence standard; the niche is
-  empty (verified Aug 2026); PANAME lands autumn 2026 — define the trainer-integrated
-  category first.
+  empty (verified Aug 2026) — ship the trainer-integrated category with local tooling.
 - **Why you?** The audit encodes the research synthesis (Panda/Meeus/LoRA-Leak/Bossy):
   the PEFT router, secret-span scoring, control calibration — the parts that are easy to
   get silently wrong.
 - **Business?** Free OSS core forever; paid design-partner pilots and enterprise support
-  (see `design-partner-onepager.md` — pricing is founder-decision, suggestions only).
+  (see `design-partner-onepager.md` for the pilot ask; quote from email).

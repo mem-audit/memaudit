@@ -306,7 +306,7 @@ def run_demo(
         "scale": (
             f"randomly-initialized TinyDemoLM (hidden={DEMO_HIDDEN}, vocab={DEMO_VOCAB}, "
             f"1 attention block), {'LoRA' if used_lora else 'full fine-tune'}, "
-            f"device={device}. Not a 7B or pretrained-GPT-2 result."
+            f"device={device}. Positive-control validation run."
         ),
         "n_canaries": n,
         "n_controls": n_controls,
@@ -350,7 +350,7 @@ def write_summary_md(report: dict[str, Any], path: str | Path) -> Path:
         "# memaudit demo metrics (measured)",
         "",
         "These numbers come from `python examples/demo.py` / `memaudit demo` on a",
-        "randomly-initialized tiny causal LM. They are **not** paper-scale 7B figures.",
+        "randomly-initialized TinyDemoLM — a positive-control validation run.",
         "",
         f"- Setup: {demo.get('scale')}",
         f"- n inserted canaries / controls: {mem.get('n_members')} / {mem.get('n_controls')}",

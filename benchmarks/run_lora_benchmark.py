@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Honest LoRA benchmark: real small pretrained LM + disable_adapter scoring.
 
-Scale is labeled in the report. Not a 7B result.
+Scale is labeled in the report (pretrained distilgpt2 + LoRA).
 """
 
 from __future__ import annotations
@@ -243,7 +243,7 @@ def main() -> int:
         "scale": (
             f"pretrained {model_name} + LoRA r={ns.lora_r} on c_attn, "
             f"device={device}, host={len(host)} short records, "
-            f"canary budget {budget['frac']:.3%} of tokens. Not a 7B result."
+            f"canary budget {budget['frac']:.3%} of tokens."
         ),
         "model": model_name,
         "device": device,

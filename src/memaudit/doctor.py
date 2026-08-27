@@ -135,7 +135,7 @@ def run_doctor(
     failures = check_environment()
     path = Path(report_path) if report_path else None
     if path is None and not skip_demo:
-        print("INFO  running tiny demo (instrument check, not a 7B result)")
+        print("INFO  running TinyDemoLM positive-control demo")
         from memaudit.demo import run_demo
 
         report = run_demo(output_dir=output_dir)

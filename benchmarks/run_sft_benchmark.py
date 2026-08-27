@@ -7,7 +7,7 @@ masks prompt tokens to -100 in the collator), LoRA via ``peft_config``, the
 pre-flight survival scan running against TRL's *tokenized* train_dataset, and
 ``--ref auto`` adapter-toggle scoring at ``on_train_end``.
 
-Scale is labeled in the report. Not a 7B result.
+Scale is labeled in the report (pretrained distilgpt2 + LoRA via SFTTrainer).
 """
 
 from __future__ import annotations
@@ -218,8 +218,7 @@ def main() -> int:
         "scale": (
             f"pretrained {model_name} + LoRA r={ns.lora_r} on c_attn via trl.SFTTrainer "
             f"(prompt/completion, completion_only_loss=True), device={device}, "
-            f"host={len(host)} short records, canary budget {budget['frac']:.3%} of tokens. "
-            "Not a 7B result."
+            f"host={len(host)} short records, canary budget {budget['frac']:.3%} of tokens."
         ),
         "trainer": "trl.SFTTrainer",
         "model": model_name,

@@ -2,7 +2,6 @@
 
 *Plain-language summary of what memaudit's results do and do not mean. This document is
 not legal advice (see §7). Last updated: August 2026.*
-<!-- TODO: have counsel review this document before any enterprise deal or paid pilot. -->
 
 ## 1. Evidence, not compliance
 

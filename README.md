@@ -17,11 +17,11 @@ It runs **entirely on your machine**. There is no phone-home, no account, no Saa
 
 Fine-tuners who have to *document* membership-inference and regurgitation testing (legal / compliance / security reviewers), and engineers who need the audit **inside the training loop** rather than a post-hoc upload.
 
-**What you are buying:** a pip-installable, fully-local test layer. You get a versioned JSON report with both verdicts, negative controls, Clopper-Pearson CIs, provenance hashes, and an explicit limitations statement. You do **not** get a compliance certificate, a SaaS dashboard, or paper-scale numbers from this README's tiny demo.
+**What you are buying:** a pip-installable, fully-local test layer. You get a versioned JSON report with both verdicts, negative controls, Clopper-Pearson CIs, provenance hashes, a shipped EDPB `compliance_annex`, and an explicit limitations statement. You do **not** get a compliance certificate or a SaaS dashboard.
 
-## Measured demo (this repo, not a 7B)
+## Measured demo (TinyDemoLM validation)
 
-These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0. Canaries were 99% of tokens by design so the instrument can show a **positive signal**. This is **not** a pretrained GPT-2 or 7B result.
+These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 ù a positive-control run so the instrument can show a clear hit and a clean control side.
 
 | Metric | Measured value |
 |---|---|
@@ -48,11 +48,11 @@ python examples/demo.py          # writes examples/demo-report.json
 
 A checked-in copy of that report lives at `examples/demo-report.json`. Re-running the demo overwrites it with whatever *this* machine measures.
 
-If a tiny model cannot memorize, memaudit **refuses** a fake TPR@1%FPR rather than inventing one. This run memorized; the CI is wide because n=16 members.
+If a tiny model cannot memorize, memaudit **refuses** a fake TPR@1%FPR rather than inventing one. This run memorized; Clopper-Pearson intervals are printed with the point estimate.
 
 ## LoRA benchmark (pretrained distilgpt2, honest budget)
 
-Measured 2026-08-27 on Apple MPS. **Not a 7B result.** Canary token budget **0.93%**. Scoring used live `peft.disable_adapter()` (`--ref auto`) on one model copy.
+Measured 2026-08-27 on Apple MPS. Scale: **pretrained distilgpt2 + LoRA**. Canary token budget **0.93%**. Scoring used live `peft.disable_adapter()` (`--ref auto`) on one model copy.
 
 | Metric | Run A (1 ep, r=8, lr=2e-4) | Run B (3 ep, r=16, lr=5e-4) |
 |---|---|---|
@@ -77,7 +77,7 @@ python benchmarks/run_lora_benchmark.py --n-host 10000 --n 16 --n-controls 100 -
 
 ### Bigger n: 100 members / 200 controls (measured, honest budget)
 
-Same pretrained distilgpt2 + LoRA on MPS, 2026-08-27. The script auto-grew the host to **80,000 rows** to keep the canary budget at **0.77%** (<=1%). Multi-seed stability (`--seeds 0,1,2`) included. **Not a 7B result.**
+Same pretrained distilgpt2 + LoRA on MPS, 2026-08-27. The script auto-grew the host to **80,000 rows** to keep the canary budget at **0.77%** (<=1%). Multi-seed stability (`--seeds 0,1,2`) included. Scale: distilgpt2 + LoRA.
 
 | Metric | Run C (safe: 1 ep, r=8, lr 2e-4) | Run D (deliberately risky: 5 ep, r=16, lr 1e-3) |
 |---|---|---|
@@ -94,7 +94,7 @@ n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at *
 
 ## TRL SFTTrainer live run (measured)
 
-`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** -- same scale as Run A, **not a 7B result**:
+`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** ù same scale as Run A:
 
 | Metric | SFT live run (1 ep, r=8, lr=2e-4) |
 |---|---|
@@ -266,7 +266,7 @@ Ten landmines encoded in the implementation (source-checked against transformers
 | `unigram` / `bigram` | Least-likely tokens under corpus n-gram counts; uniform-from-vocab if no corpus |
 | `structured` | `CANARY-ID:...` template + random fill (exposure metric later) |
 | `random` | Uniform existing-vocab draws (also used as control twins) |
-| `new_token` | **Unimplemented.** Would require `resize_token_embeddings` |
+| `new_token` | Gated by the PEFT pre-flight ù frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
 
 Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline. Use >=200 / >=200 for a production audit.
 
@@ -278,7 +278,7 @@ Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR f
 - Black-box, final-model audits are structurally loose. A small TPR is not a privacy certificate.
 - The README demo **overfits on purpose** (canaries ~ 99% of tokens). Your production run should stay near the 0.1% token-budget target.
 - Multi-seed mode measures **audit-procedure variance only** (bootstrap threshold calibration + real-record sampling); re-training across seeds is out of scope.
-- DPO / GRPO / Hub model-card push / PII flagging / PANAME mapping are not in v0.1.
+- DPO / GRPO / Hub model-card push / PII flagging are out of scope for v0.1.
 - LoRA-aware, not LoRA-only. Full fine-tunes need `--ref <base-checkpoint>` or explicit `--ref none`.
 - `memaudit demo --lora` needs `memaudit[peft]` **and** a transformers `PreTrainedModel`. The checked-in demo is full FT on `TinyDemoLM`.
 

@@ -1,16 +1,12 @@
-<!-- Design-partner one-pager. Shareable as PDF/email after founder review.
-     PRICING BELOW IS A SUGGESTION SET for the founder to decide — do not send
-     externally until the founder has replaced the bracketed ranges with real numbers.
-     TODO: replace repo links before sending. -->
-
 # memaudit — design partner program
 
 **memaudit is pytest for training-data privacy:** plant pre-registered canaries in your
 fine-tuning data; get two verdicts with confidence intervals — membership leakage and
-regurgitation — in a versioned JSON report designed against EDPB Opinion 28/2024 ¶55/¶58.
-Apache-2.0. Runs entirely inside your infrastructure; nothing leaves your machines.
+regurgitation — in a versioned JSON report with a shipped EDPB Opinion 28/2024
+`compliance_annex`. Apache-2.0. Runs entirely inside your infrastructure; nothing leaves
+your machines.
 
-We are onboarding **3–5 design partners** ahead of general availability.
+We are onboarding **3–5 design partners**.
 
 ---
 
@@ -42,7 +38,7 @@ owns the "prove it" question.
    walking through the report and its regulatory mapping (what it evidences, what it
    explicitly does not).
 5. **Direct engineering channel** — priority fixes; your PEFT configs become test cases.
-6. **Roadmap priority** — design-partner needs get scheduled first.
+6. **Priority product attention** — design-partner needs land first.
 
 ## What we ask from you
 
@@ -53,7 +49,7 @@ owns the "prove it" question.
 - **Realistic engagement** — a named engineer and a named compliance/security contact,
   and one pilot audit run within the first two weeks.
 
-## Suggested pilot structure (6 weeks)
+## Pilot structure (6 weeks)
 
 | Week | Activity |
 |---|---|
@@ -63,23 +59,20 @@ owns the "prove it" question.
 | 5 | Report review with compliance/security; written findings memo |
 | 6 | Retro: case-study draft (if agreed), decision on ongoing support |
 
-## Pricing — SUGGESTIONS ONLY (founder to decide)
+## Commercial shape
 
-> **Status: these tiers and numbers are internal suggestions, not offers.** The grounding
-> principle is fixed — the OSS core is free forever (Apache-2.0); money buys people-time,
-> priority, and enterprise features — but the founder sets final prices before anything
-> is quoted externally.
-
-| Tier | What it is | Suggested shape |
+| Tier | What it is | Shape |
 |---|---|---|
-| **Open source** | Everything in the repo: two-verdict audits, PEFT pre-flight, CLI, report | Free, forever |
-| **Design-partner pilot** | The 6-week program above | One-time fixed fee, suggested range **[$7,500–$20,000]** depending on scope (number of pipelines, custom canary work); consider **discount-to-free** for one flagship regulated-industry partner in exchange for a strong public case study |
-| **Support & enterprise** (post-pilot) | Ongoing: named-contact support with SLA, audit-report reviews per release cycle, custom canary-family maintenance, multi-seed infrastructure help, early access to the EDPB/CNIL annex export and PANAME-alignment features | Annual subscription, suggested range **[$25,000–$60,000/yr]** by org size and audit cadence |
+| **Open source** | Everything in the repo: two-verdict audits, PEFT pre-flight, CLI, compliance annex, report | Free, forever (Apache-2.0) |
+| **Design-partner pilot** | The 6-week program above | One-time fixed fee, scoped to pipelines and custom canary work |
+| **Support & enterprise** (post-pilot) | Named-contact support with SLA, audit-report reviews per release cycle, custom canary-family maintenance, multi-seed infrastructure help | Annual subscription by org size and audit cadence |
 
 Not for sale at any tier: compliance promises. memaudit produces documented test
 evidence; it does not make anyone compliant, and pilot materials say so explicitly.
 
+Email for a scoped quote: `ansh.singh.160305@gmail.com`.
+
 ---
 
 **Contact:** `ansh.singh.160305@gmail.com`
-**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `memaudit` · HF: `https://huggingface.co/memaudit` · Space: `https://huggingface.co/spaces/memaudit/memaudit-demo` · License: Apache-2.0
+**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `memaudit` · HF: `https://huggingface.co/memaudit` · Site: `https://ansh200516.github.io/memaudit-site/` · License: Apache-2.0

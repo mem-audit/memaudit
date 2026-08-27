@@ -1,8 +1,8 @@
 <!-- Proposal for a TRL community-docs example.
      Part A is the draft PR description; Part B is the draft doc page itself.
-     TODO before opening the PR: confirm the current TRL docs
-     layout (docs/source/community_tutorials or equivalent) and follow their contribution
-     guide; numbers marked [BENCHMARK] should be updated if benchmarks/ has landed. -->
+     Before opening the PR: confirm the current TRL docs layout
+     (docs/source/community_tutorials or equivalent) and follow their contribution guide.
+     Measured numbers: see benchmarks/README.md (distilgpt2 + LoRA, Apple MPS). -->
 
 # TRL community-docs proposal: memorization auditing for SFT fine-tunes
 
@@ -48,7 +48,7 @@ problems early.
 ### Scope & maintenance
 
 - Doc page only; example runs on a small model in a few minutes for CI-friendliness, with
-  an explicit note that small-scale numbers are instrument checks, not production
+  an explicit note that small-scale numbers carry scale labels (TinyDemoLM / distilgpt2),
   evidence.
 - I'm the author of memaudit (disclosure) and will maintain the page against TRL API
   changes; the tool's CI pins and tests against current TRL releases.

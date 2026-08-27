@@ -13,5 +13,3 @@ After auth:
 ```
 
 Live org profile: https://huggingface.co/memaudit
-
-Expected demo Space after publish: https://huggingface.co/spaces/memaudit/memaudit-demo

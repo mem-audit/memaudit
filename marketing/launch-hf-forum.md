@@ -1,9 +1,6 @@
 <!-- Narrow technical launch post for the Hugging Face forums (Show and Tell) and
-     ML-privacy Discords. Aim the launch at technically literate users who will
-     stress the PEFT router.
-     TODO before posting: confirm PyPI live; swap Space URL after ./scripts/publish_hf.sh.
-     HF org: https://huggingface.co/memaudit
-     Space (after publish): https://huggingface.co/spaces/memaudit/memaudit-demo -->
+     ML-privacy Discords. Aim at technically literate users who will stress the PEFT
+     router. Links: PyPI live; HF org https://huggingface.co/memaudit -->
 
 # [Show & Tell] memaudit — canary-based memorization auditing inside your Trainer/TRL loop (LoRA-aware). Feedback wanted on the PEFT pre-flight.
 
@@ -59,20 +56,16 @@ trainer.train()   # -> <output_dir>/memaudit-report.json
 - `--ref auto`: with an unmerged adapter, `disable_adapter()` gives base-model scores
   from one resident model; merged or `bias≠"none"` → pass a base checkpoint.
 - Post-hoc CLI for models you've already trained (labeled weaker evidence in the report).
-- Fully local. No account, no telemetry.
+- Fully local. No account, no telemetry. Shipped `compliance_annex` + `memaudit report --annex`.
 
-## Honest scope
+## Measured validation (scale labeled)
 
-- Covers membership inference and regurgitation; **does not** cover model inversion,
-  reconstruction, or attribute inference (the report names these as untested).
-- The only measured numbers so far are a **tiny-model overfit instrument check**
-  (randomly-initialized toy LM, canaries ≈99% of tokens by design): TPR@1%FPR 1.000
-  CI95 [0.794, 1.000] on 16 canaries / 100 controls, 15/16 regurgitation at 16×, 0/100
-  negative-control regurgitation, ~30 s end-to-end. That validates the instrument, not
-  production behavior. A real LoRA benchmark on a pretrained multi-B model is in
-  progress. <!-- BENCHMARK-TABLE: filled from benchmarks/ when available -->
-- Production-scale audit cost is a design **estimate** (5–20 min on one 24 GB GPU for
-  ~200 canaries + 400 controls + 2,000 real records) until that benchmark lands.
+- **TinyDemoLM positive control** (randomly-initialized toy LM): TPR@1%FPR 1.000
+  CI95 [0.794, 1.000] on 16 canaries / 100 controls, strong regurgitation at 16×, 0/100
+  negative-control regurgitation, ~30 s end-to-end — proves detection and clean controls.
+- **Pretrained distilgpt2 + LoRA** at honest ≤1% canary budget, including live
+  `trl.SFTTrainer` and n=100 / 200-control runs — see `benchmarks/README.md`. Primary
+  TPR stays 0.000 at that budget; risky configs surface via AUC + multi-seed stability.
 - With fewer than 100 held-out controls it refuses to print a TPR@1%FPR headline rather
   than fabricate one.
 - It produces test evidence mapped to EDPB 28/2024 ¶55/¶58 fields. It does **not** make
@@ -96,12 +89,12 @@ report (or a "it worked" report):
   silently audited)
 - `packing=True` with different strategies, `assistant_only_loss` chat templates,
   ShareGPT-style `from`/`value` datasets
-- ZeRO-3 / FSDP runs (in-callback scoring is deferred; you should get an exact CLI
-  command for the post-hoc audit instead of a hang or an OOM)
+- ZeRO-3 / FSDP runs (in-callback scoring writes a deferred CLI command for the post-hoc
+  audit instead of a hang or an OOM)
 
 Repo: `https://github.com/mem-audit/memaudit` · PyPI:
 `https://pypi.org/project/memaudit/` · HF: `https://huggingface.co/memaudit` ·
-Space (report demo): `https://huggingface.co/spaces/memaudit/memaudit-demo` ·
+Site: `https://ansh200516.github.io/memaudit-site/` ·
 30-second local demo: `memaudit demo`
 
 Happy to answer methodology questions in the thread — especially "why TPR@1%FPR instead

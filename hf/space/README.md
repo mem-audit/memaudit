@@ -19,15 +19,15 @@ tags:
 
 # memaudit — report demo
 
-Interactive viewer for a **checked-in** `memaudit-report.json` from the tiny-model
-overfit instrument check. This Space does **not** download large models and does
+Interactive viewer for a **checked-in** `memaudit-report.json` from the TinyDemoLM
+positive-control run. This Space does **not** download large models and does
 **not** phone home from the library — the library itself always runs locally.
 
-## Scale label (mandatory)
+## Scale
 
 Model: randomly-initialized **TinyDemoLM** (hidden=64, vocab=256, 1 attention block),
-full fine-tune. **Not** a pretrained GPT-2 or 7B result. Canary token budget was
-~99% by design so the instrument can show a positive signal.
+full fine-tune — positive control so the instrument can show a clear hit. For pretrained
+distilgpt2 + LoRA numbers, see the [GitHub benchmarks](https://github.com/mem-audit/memaudit/tree/main/benchmarks).
 
 ## Links
 
