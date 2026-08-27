@@ -566,7 +566,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           </div>
           <div class="metric">
             <div class="big">~30<small>&nbsp;s</small></div>
-            <div class="lab">End-to-end on a laptop<br>6.0 s train + 18.1 s audit</div>
+            <div class="lab">End-to-end on a laptop<br>7.0 s train + 20.3 s audit</div>
           </div>
         </div>
         <p class="demo-cap">
@@ -641,9 +641,11 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
       </div>
 
       <p class="estimate-line reveal">
-        Designed compute envelope: a production-scale audit (7B-class model, ~200 canaries + 400 controls +
-        2,000 real records) targets <b>5–20 minutes on a single 24&nbsp;GB GPU</b> — two forward passes per sequence,
-        no shadow models, no retraining. <span class="est">Estimate — 7B not yet measured</span>
+        Designed envelope for a production-scale audit (7B-class model, ~200 canaries + 400 controls +
+        2,000 real records): <b>5–20 minutes on a single 24&nbsp;GB GPU</b> — two forward passes per sequence,
+        no shadow models, no retraining. <span class="est">Designed envelope — not yet measured at 7B</span>
+        Measured wall-clock on Apple MPS / distilgpt2: Run&nbsp;C train&nbsp;753&nbsp;s / audit&nbsp;173&nbsp;s;
+        SFT train&nbsp;192&nbsp;s / audit&nbsp;52&nbsp;s (see <code style="font-family:var(--mono);font-size:.85em">benchmarks/README.md</code>).
       </p>
     </div>
   </section>
@@ -935,9 +937,9 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
   var lines = [
     {c:"t-cmd",  t:"pip install memaudit"},
     {c:"t-cmd",  t:"memaudit demo"},
-    {c:"t-dim",  t:"  train       TinyDemoLM (hidden=64, vocab=256) · 6.0 s · loss 0.127"},
+    {c:"t-dim",  t:"  train       TinyDemoLM (hidden=64, vocab=256) · 7.0 s · loss 0.126"},
     {c:"t-dim",  t:"  pre-flight  placement OK · coins recorded · 16 inserted / 100 controls"},
-    {c:"t-dim",  t:"  audit       base-calibrated Min-K%++ · secret-span · 18.1 s"},
+    {c:"t-dim",  t:"  audit       base-calibrated Min-K%++ · secret-span · 20.3 s"},
     {c:"t-rule", t:"  ─────────────────────────────────────────────────"},
     {c:"t-verdict", h:"  membership     TPR@1%FPR <span class='t-val'>1.000</span>   CI95 <span class='t-val'>[0.794, 1.000]</span>"},
     {c:"t-verdict", h:"  regurgitation  <span class='t-val'>15/16</span> at 16×      controls <span class='t-ok'>0/100</span>"},
