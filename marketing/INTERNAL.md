@@ -9,5 +9,6 @@ Live buyer surfaces:
 
 - Site: https://ansh200516.github.io/memaudit-site/
 - GitHub: https://github.com/mem-audit/memaudit
+- PyPI: https://pypi.org/project/memaudit/ (`pip install memaudit`)
 - HF org: https://huggingface.co/memaudit
 - Contact: ansh.singh.160305@gmail.com

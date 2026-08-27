@@ -32,6 +32,10 @@ datasets 3.6.0
 ```
 
 ```bash
+# Buyer path (published extras):
+pip install 'memaudit[peft,trl]'
+
+# Exact pins used for the table above (from a clone):
 python3.12 -m venv .venv-buyer
 .venv-buyer/bin/pip install 'torch>=2.5,<2.8' transformers==4.56.2 \
   'peft>=0.15,<0.21' 'trl>=0.15,<1.0' datasets numpy scipy

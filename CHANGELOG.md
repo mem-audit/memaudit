@@ -4,6 +4,7 @@
 
 First buyer-facing release.
 
+- Published on PyPI: [`pip install memaudit`](https://pypi.org/project/memaudit/). Optional extras: `peft`, `trl`, `hub`, `dev` (combine as `"memaudit[peft,trl]"`).
 - Two-verdict audit: membership (base-calibrated Min-K%++ on the secret span) and regurgitation (prefix-prompted exact / BLEU / NED).
 - Pre-train `inject()` + `MemorizationAuditCallback` + shared `run_audit` / `memaudit audit`.
 - `--canary-set` and `--manifest` are the same flag (inject() JSON).

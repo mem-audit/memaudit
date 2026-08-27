@@ -1,5 +1,9 @@
 # memaudit
 
+[![PyPI](https://img.shields.io/pypi/v/memaudit)](https://pypi.org/project/memaudit/)
+[![Python](https://img.shields.io/pypi/pyversions/memaudit)](https://pypi.org/project/memaudit/)
+[![License](https://img.shields.io/pypi/l/memaudit)](https://github.com/mem-audit/memaudit/blob/main/LICENSE)
+
 **Training-data memorization auditor for Hugging Face Trainer / TRL fine-tunes.**
 
 A local, Apache-2.0 plugin that answers two questions every fine-tune in a regulated setting should document ([EDPB Opinion 28/2024](https://www.edpb.europa.eu/) para 55 / para 58):
@@ -19,9 +23,16 @@ Fine-tuners who have to *document* membership-inference and regurgitation testin
 
 **What you are buying:** a pip-installable, fully-local test layer. You get a versioned JSON report with both verdicts, negative controls, Clopper-Pearson CIs, provenance hashes, a shipped EDPB `compliance_annex`, and an explicit limitations statement. You do **not** get a compliance certificate or a SaaS dashboard.
 
+```bash
+pip install memaudit
+memaudit demo
+```
+
+[PyPI](https://pypi.org/project/memaudit/) Â· extras: `"memaudit[peft]"`, `"memaudit[trl]"`, or `"memaudit[peft,trl]"`. From source: `git clone` then `pip install -e ".[dev,peft,trl]"`.
+
 ## Measured demo (TinyDemoLM validation)
 
-These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0  a positive-control run so the instrument can show a clear hit and a clean control side.
+These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 â€” a positive-control run so the instrument can show a clear hit and a clean control side.
 
 | Metric | Measured value |
 |---|---|
@@ -41,9 +52,9 @@ These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MP
 Reproduce:
 
 ```bash
-pip install -e ".[dev]"
-python examples/demo.py          # writes examples/demo-report.json
-# or:  memaudit demo --output-dir examples
+pip install memaudit
+memaudit demo --output-dir examples
+# from a clone:  pip install -e ".[dev]" && python examples/demo.py
 ```
 
 A checked-in copy of that report lives at `examples/demo-report.json`. Re-running the demo overwrites it with whatever *this* machine measures.
@@ -94,7 +105,7 @@ n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at *
 
 ## TRL SFTTrainer live run (measured)
 
-`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%**  same scale as Run A:
+`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** â€” same scale as Run A:
 
 | Metric | SFT live run (1 ep, r=8, lr=2e-4) |
 |---|---|
@@ -139,8 +150,11 @@ Pre-flight **blocks** silent false confidence: wrong canary placement, `fmt` vs 
 pip install memaudit                 # core: transformers, torch, datasets, numpy, scipy
 pip install "memaudit[peft]"         # LoRA / adapter-toggle scoring
 pip install "memaudit[trl]"          # SFTTrainer lint (optional)
+pip install "memaudit[peft,trl]"     # both extras
 pip install "memaudit[hub]"          # reserved for later model-card push
-pip install -e ".[dev,peft,trl]"     # from a clone
+# from source:
+git clone https://github.com/mem-audit/memaudit.git
+cd memaudit && pip install -e ".[dev,peft,trl]"
 ```
 
 Requires Python 3.10+ and `transformers>=4.56.2` (works on 5.x; the callback reads `processing_class`, not the removed `tokenizer=` kwarg).
@@ -266,7 +280,7 @@ Ten landmines encoded in the implementation (source-checked against transformers
 | `unigram` / `bigram` | Least-likely tokens under corpus n-gram counts; uniform-from-vocab if no corpus |
 | `structured` | `CANARY-ID:...` template + random fill (exposure metric later) |
 | `random` | Uniform existing-vocab draws (also used as control twins) |
-| `new_token` | Gated by the PEFT pre-flight  frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
+| `new_token` | Gated by the PEFT pre-flight â€” frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
 
 Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline. Use >=200 / >=200 for a production audit.
 

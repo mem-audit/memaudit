@@ -30,6 +30,7 @@ LINKS_MD = (
     "**GitHub:** [mem-audit/memaudit](https://github.com/mem-audit/memaudit) · "
     "**Site:** [ansh200516.github.io/memaudit-site](https://ansh200516.github.io/memaudit-site/) · "
     "**Install:** `pip install memaudit` · "
+    "**PyPI:** [pypi.org/project/memaudit](https://pypi.org/project/memaudit/) · "
     "**Email:** [ansh.singh.160305@gmail.com](mailto:ansh.singh.160305@gmail.com)"
 )
 
@@ -165,8 +166,8 @@ def try_local_style_demo() -> str:
         lines.append("```")
         lines.append("")
         lines.append(
-            "Installing from git on a Space rebuild is optional and slow; "
-            "prefer the checked-in report viewer above."
+            "This Space shows a checked-in report. Re-run the demo locally with "
+            "`pip install memaudit` — see [PyPI](https://pypi.org/project/memaudit/)."
         )
     except Exception as exc:  # noqa: BLE001 — show friendly probe result
         lines.append(f"- `import memaudit` not available here (`{type(exc).__name__}: {exc}`).")
@@ -177,8 +178,9 @@ def try_local_style_demo() -> str:
         lines.append("```bash")
         lines.append("pip install memaudit")
         lines.append("memaudit demo   # writes memaudit-report.json")
-        lines.append("# or from source:")
-        lines.append("pip install git+https://github.com/mem-audit/memaudit.git")
+        lines.append("# from source (optional):")
+        lines.append("git clone https://github.com/mem-audit/memaudit.git")
+        lines.append("cd memaudit && pip install -e .")
         lines.append("```")
         lines.append("")
         lines.append(

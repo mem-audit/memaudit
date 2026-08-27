@@ -86,8 +86,9 @@ reports both.
 ## Install
 
 ```bash
-pip install memaudit          # core
-pip install "memaudit[peft]"  # if you fine-tune with LoRA/PEFT
+pip install memaudit               # core — https://pypi.org/project/memaudit/
+pip install "memaudit[peft]"       # if you fine-tune with LoRA/PEFT
+pip install "memaudit[peft,trl]"   # LoRA + SFTTrainer extras
 ```
 
 ## Step 1 — inject canaries *before* building the trainer

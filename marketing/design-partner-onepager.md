@@ -75,4 +75,5 @@ Email for a scoped quote: `ansh.singh.160305@gmail.com`.
 ---
 
 **Contact:** `ansh.singh.160305@gmail.com`
-**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `memaudit` · HF: `https://huggingface.co/memaudit` · Site: `https://ansh200516.github.io/memaudit-site/` · License: Apache-2.0
+**Install:** `pip install memaudit`
+**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `https://pypi.org/project/memaudit/` · HF: `https://huggingface.co/memaudit` · Site: `https://ansh200516.github.io/memaudit-site/` · License: Apache-2.0

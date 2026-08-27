@@ -33,7 +33,7 @@ distilgpt2 + LoRA numbers, see the [GitHub benchmarks](https://github.com/mem-au
 
 - GitHub: [mem-audit/memaudit](https://github.com/mem-audit/memaudit)
 - Site: [ansh200516.github.io/memaudit-site](https://ansh200516.github.io/memaudit-site/)
-- PyPI: `pip install memaudit`
+- PyPI: [`pip install memaudit`](https://pypi.org/project/memaudit/)
 - Org: [huggingface.co/memaudit](https://huggingface.co/memaudit)
 - Contact: ansh.singh.160305@gmail.com
 

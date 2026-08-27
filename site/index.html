@@ -344,6 +344,7 @@
       <a href="#compliance">Compliance</a>
       <a href="#landscape">Landscape</a>
       <a href="#faq">FAQ</a>
+      <a href="https://pypi.org/project/memaudit/">PyPI ↗</a>
       <a class="nav-gh" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
     </nav>
   </div>
@@ -372,6 +373,7 @@
           <a class="btn btn-ghost" href="#partners">Design partners</a>
         </div>
         <div class="factstrip fade d5">
+          <span><b>◆</b> <a href="https://pypi.org/project/memaudit/">PyPI 0.1.0</a></span>
           <span><b>◆</b> Apache-2.0</span>
           <span><b>◆</b> Fully local · no phone-home</span>
           <span><b>◆</b> LoRA / PEFT-aware</span>
@@ -453,7 +455,8 @@
         <div class="codeblock reveal">
           <div class="cb-head"><span class="cb-title">1 · install</span><button class="copybtn" data-copy="pip install memaudit">copy</button></div>
           <pre><span class="c-prompt">$</span> pip install memaudit
-<span class="c-prompt">$</span> pip install <span class="c-str">"memaudit[peft]"</span>   <span class="c-com"># LoRA / adapter-toggle scoring</span></pre>
+<span class="c-prompt">$</span> pip install <span class="c-str">"memaudit[peft]"</span>        <span class="c-com"># LoRA / adapter-toggle</span>
+<span class="c-prompt">$</span> pip install <span class="c-str">"memaudit[peft,trl]"</span>   <span class="c-com"># LoRA + SFTTrainer</span></pre>
         </div>
         <div class="codeblock reveal">
           <div class="cb-head"><span class="cb-title">3 · or post-hoc, from the CLI</span><button class="copybtn" data-copy="memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json --dataset train.jsonl --ref auto">copy</button></div>
