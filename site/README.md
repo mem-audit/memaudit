@@ -17,8 +17,9 @@ Single self-contained `index.html` (inline CSS/JS, no build step). Only external
   ```sh
   git clone https://github.com/ansh200516/memaudit-site.git /tmp/memaudit-site-deploy  # skip if checkout already exists
   cp site/index.html /tmp/memaudit-site-deploy/index.html
-  git -C /tmp/memaudit-site-deploy add index.html
-  git -C /tmp/memaudit-site-deploy commit -m "Update landing page"
+  cp site/case-study.html /tmp/memaudit-site-deploy/case-study.html
+  git -C /tmp/memaudit-site-deploy add index.html case-study.html
+  git -C /tmp/memaudit-site-deploy commit -m "Update landing page and flagship case study"
   git -C /tmp/memaudit-site-deploy push
   ```
 

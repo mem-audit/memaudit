@@ -1,0 +1,4 @@
+9743dad2e7bbd0c25d8306bafe84329b2d4c79136650d7bef1e3bf3a01275ff4  alpaca-case-study-report.json
+# memaudit report_sha256: SHA-256 of the canonicalized report content
+# (sorted keys, compact separators, NaN->null, minus report_sha256).
+# Not a raw file hash. Check with: memaudit verify alpaca-case-study-report.json

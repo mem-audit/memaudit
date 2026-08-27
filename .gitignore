@@ -23,11 +23,15 @@ benchmarks/out/
 benchmarks/out-*/
 benchmarks/benchlog.txt
 
-# JSON caches by default; keep checked-in demo artifacts
+# JSON caches by default; keep checked-in demo / case-study artifacts
 *.json
 !examples/demo-report.json
 !examples/memaudit-manifest.json
+!examples/alpaca-case-study-report.json
 !hf/space/demo-report.json
+
+# Local training junk from the flagship case study (do not commit weights)
+examples/out-alpaca-case-study/
 
 # Private research/ops (kept outside this repo under memaudit-private/)
 literature-review/

@@ -12,6 +12,7 @@ First buyer-facing release.
 - `--ref auto` uses `disable_adapter()` on an unmerged LoRA. Full fine-tunes must pass `--ref <base>` or explicit `--ref none` (downgraded headline). No silent fallback.
 - `from memaudit import inject` is the public helper; the implementation module is `memaudit.injection` (no submodule shadowing).
 - Reports are strict JSON (NaN/Inf become null). `phone_home` is always false.
+- Flagship public case study: TinyLlama-1.1B-Chat + 5,000 Stanford Alpaca rows, LoRA r=8, honest 0.39% canary budget. Script `examples/alpaca_case_study.py`, report `examples/alpaca-case-study-report.json`, write-up `docs/case-study-alpaca.md`. Measured TPR@1%FPR 0.500 (6/12, CI [0.211, 0.789]), AUC 0.880, regurgitation 0/12.
 - `memaudit demo` / `python examples/demo.py`: TinyDemoLM positive-control validation with measured numbers.
 - `memaudit doctor` / `scripts/acceptance.sh`: environment + report schema acceptance.
 - Known-bad stack: transformers 5.16.x + torch 2.6.dev (FSDP import hang). Verified LoRA stack: Python 3.12, torch 2.7.1, transformers 4.56.2, peft 0.20.0, trl 0.29.1. Clean wheel install also resolved torch 2.13.0 + transformers 5.16.1.

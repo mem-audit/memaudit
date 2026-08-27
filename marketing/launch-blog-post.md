@@ -219,6 +219,22 @@ model says under public-corpus replay. memaudit generates training-side evidence
 
 ## 8. Measured numbers — labeled at scale
 
+**Flagship: TinyLlama-1.1B-Chat + Stanford Alpaca** (the run to click first —
+[`docs/case-study-alpaca.md`](../docs/case-study-alpaca.md),
+[`docs/blog-alpaca-case-study.md`](../docs/blog-alpaca-case-study.md)):
+
+| Metric | Value | Scale |
+|---|---|---|
+| TPR @ 1% FPR | **0.500** (6/12), CI95 [0.211, 0.789] | TinyLlama-1.1B-Chat, LoRA r=8, 1 epoch, 5,000 Alpaca rows |
+| AUC (secondary) | **0.880** | same |
+| Regurgitation | **0/12** | same |
+| Negative-control regurgitation | **0.00** (n=120) | same |
+| Canary token budget | **0.388%** | honest band, not the overfit demo |
+| Wall clock | train 36.8 min + audit 5.4 min on Apple M3 Pro / MPS | same |
+
+Membership leaked; the model did not emit the secrets. Reproduce:
+`pip install "memaudit[peft,trl]" && python examples/alpaca_case_study.py`.
+
 **TinyDemoLM positive control** (randomly-initialized, hidden=64, vocab=256; canaries
 deliberately dominate tokens so the instrument can show a clear hit):
 

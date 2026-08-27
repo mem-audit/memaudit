@@ -7,6 +7,7 @@ public, no founder-only pricing caveats in buyer-facing one-pagers.
 
 Live buyer surfaces:
 
+- Flagship case study: `docs/case-study-alpaca.md` · site `/case-study.html` · HF forum draft `marketing/hf-forum-alpaca-case-study.md` (paste; not posted from this machine)
 - Site: https://ansh200516.github.io/memaudit-site/
 - GitHub: https://github.com/mem-audit/memaudit
 - PyPI: https://pypi.org/project/memaudit/ (`pip install memaudit`)

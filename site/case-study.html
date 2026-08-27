@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flagship case study — TinyLlama + Alpaca · memaudit</title>
+<meta name="description" content="Measured memaudit run: TinyLlama-1.1B-Chat LoRA on 5,000 Stanford Alpaca rows. TPR@1%FPR 0.500 (6/12), CI [0.211, 0.789], regurgitation 0/12. Honest 0.39% canary budget.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23F6F1E7'/%3E%3Ctext x='32' y='46' font-size='44' text-anchor='middle' font-family='Georgia,serif' fill='%23B23A1D'%3E¶%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F1E7;--paper-2:#EFE7D6;--paper-3:#E9DFC9;--ink:#191510;--ink-soft:#5A5142;
+    --line:#D8CCB4;--line-soft:#E4DAC5;--accent:#B23A1D;--accent-deep:#8E2C14;--pass:#33684B;
+    --term-bg:#17130D;--term-ink:#EDE4CF;--term-dim:#8F8570;--term-amber:#E0A94E;--term-green:#8CB795;
+    --serif:"Instrument Serif", Georgia, serif;--body:"Newsreader", Georgia, serif;
+    --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:76px}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.42;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.05'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E")}
+  ::selection{background:var(--accent);color:var(--paper)}
+  a{color:inherit}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+  header.topbar{position:sticky;top:0;z-index:900;background:color-mix(in srgb, var(--paper) 88%, transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topbar-inner{display:flex;align-items:center;gap:22px;height:60px}
+  .wordmark{display:flex;align-items:baseline;gap:10px;text-decoration:none;white-space:nowrap}
+  .wordmark .pil{color:var(--accent);font-family:var(--serif);font-size:24px;line-height:1}
+  .wordmark .name{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:.02em}
+  .wordmark .ref{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
+  nav.docnav{margin-left:auto;display:flex;gap:20px;align-items:center}
+  nav.docnav a{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;color:var(--ink-soft);padding:4px 0;border-bottom:1px solid transparent}
+  nav.docnav a:hover,nav.docnav a.on{color:var(--accent);border-color:var(--accent)}
+  .nav-gh{border:1px solid var(--line);border-radius:4px;padding:5px 12px !important;color:var(--ink) !important;background:var(--paper-2)}
+  .hero{padding:72px 0 56px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px}
+  .eyebrow::before{content:"";display:inline-block;width:26px;height:1px;background:var(--accent)}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(36px,5.4vw,62px);line-height:1.04;letter-spacing:-.01em;margin:18px 0 20px;max-width:22ch}
+  h1 em{font-style:italic;color:var(--accent)}
+  .lede{font-size:19px;line-height:1.6;color:var(--ink-soft);max-width:62ch}
+  .lede strong{color:var(--ink);font-weight:600}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px;align-items:center}
+  .btn{font-family:var(--mono);font-size:13.5px;letter-spacing:.02em;text-decoration:none;border-radius:5px;padding:13px 22px;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--ink)}
+  .btn-primary{background:var(--ink);color:var(--paper)}
+  .btn-ghost{background:transparent;color:var(--ink)}
+  .pipline{font-family:var(--mono);font-size:13.5px;background:var(--paper-2);border:1px dashed var(--line);border-radius:5px;padding:13px 18px;display:inline-flex;gap:12px;align-items:center;cursor:pointer}
+  .pipline .dollar{color:var(--accent)}
+  .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;margin:48px 0 8px}
+  .metric{background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:22px 20px}
+  .metric .big{font-family:var(--mono);font-weight:600;font-size:clamp(26px,3vw,36px);letter-spacing:-.02em}
+  .metric .lab{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:8px;line-height:1.55}
+  section{border-top:1px solid var(--line);padding:72px 0}
+  .kicker{display:flex;align-items:baseline;gap:16px;margin-bottom:18px}
+  .kicker .no{font-family:var(--serif);font-size:26px;color:var(--accent)}
+  .kicker .label{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(30px,3.6vw,44px);line-height:1.08;margin-bottom:16px;max-width:24ch}
+  h2 em{color:var(--accent)}
+  p.prose{font-size:18px;color:var(--ink-soft);max-width:72ch;margin-bottom:18px}
+  p.prose b{color:var(--ink);font-weight:600}
+  table{width:100%;border-collapse:collapse}
+  .maptable th{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);text-align:left;padding:12px 16px;border-bottom:2px solid var(--ink)}
+  .maptable td{padding:14px 16px;border-bottom:1px solid var(--line-soft);font-size:15.5px;vertical-align:top}
+  .maptable td:first-child{font-family:var(--mono);font-size:13px;color:var(--accent-deep);font-weight:500;white-space:nowrap}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--paper);margin-top:22px}
+  .codeblock{background:var(--term-bg);border-radius:10px;border:1px solid #2A241A;overflow:hidden;margin-top:22px}
+  .codeblock .cb-head{padding:9px 16px;border-bottom:1px solid #2A241A;background:#1C1710;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--term-dim)}
+  .codeblock pre{padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.8;color:var(--term-ink);overflow-x:auto}
+  .take{border-left:3px solid var(--accent);background:var(--paper-2);padding:22px 26px;margin:28px 0 0;font-size:17.5px;max-width:78ch}
+  .lim{margin-top:22px;font-size:15.5px;color:var(--ink-soft);max-width:78ch}
+  footer{border-top:1px solid var(--line);padding:40px 0 28px;background:var(--paper-2)}
+  .provenance{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);display:flex;flex-wrap:wrap;gap:8px 22px}
+  .provenance b{color:var(--accent-deep);font-weight:500}
+  @media (max-width:800px){.metrics{grid-template-columns:1fr 1fr} nav.docnav a:not(.nav-gh):not(.on){display:none}}
+  @media (max-width:560px){.metrics{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="wordmark" href="index.html" aria-label="memaudit home">
+      <span class="pil">¶</span><span class="name">memaudit</span><span class="ref">v0.1 · case study</span>
+    </a>
+    <nav class="docnav" aria-label="Sections">
+      <a class="on" href="case-study.html">Case study</a>
+      <a href="index.html#evidence">Evidence</a>
+      <a href="https://pypi.org/project/memaudit/">PyPI ↗</a>
+      <a class="nav-gh" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" style="border-top:none">
+    <div class="wrap">
+      <p class="eyebrow">Flagship public example · measured 2026-08-27 · Apple M3 Pro / MPS</p>
+      <h1>TinyLlama + Alpaca leaked <em>membership.</em> It did not spit the data back.</h1>
+      <p class="lede">
+        One epoch of LoRA (r=8) on <strong>TinyLlama-1.1B-Chat</strong> and <strong>5,000 real Stanford Alpaca rows</strong>,
+        audited with the README 15-line API at an honest <strong>0.388%</strong> canary budget.
+        TPR@1%FPR <strong>0.500</strong> (6/12), 95% CI <strong>[0.211, 0.789]</strong>.
+        Regurgitation <strong>0/12</strong>. Negative-control regurgitation <strong>0.00</strong>.
+      </p>
+      <div class="cta-row">
+        <button class="pipline" data-copy="pip install &quot;memaudit[peft,trl]&quot; && python examples/alpaca_case_study.py">
+          <span class="dollar">$</span> pip install "memaudit[peft,trl]" && python examples/alpaca_case_study.py
+        </button>
+        <a class="btn btn-primary" href="https://github.com/mem-audit/memaudit/blob/main/docs/case-study-alpaca.md">Repo write-up ↗</a>
+        <a class="btn btn-ghost" href="https://github.com/mem-audit/memaudit/blob/main/examples/alpaca-case-study-report.json">Report JSON ↗</a>
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="big">0.500</div>
+          <div class="lab">TPR @ 1% FPR · 6/12 detected · CI95 [0.211, 0.789]</div>
+        </div>
+        <div class="metric">
+          <div class="big">0.880</div>
+          <div class="lab">AUC (secondary) · member/control ranking</div>
+        </div>
+        <div class="metric">
+          <div class="big">0<span style="font-size:.5em;color:var(--ink-soft)">/12</span></div>
+          <div class="lab">Regurgitation · exact / BLEU&gt;0.75 / NED≤0.1</div>
+        </div>
+        <div class="metric">
+          <div class="big">0.00</div>
+          <div class="lab">Negative-control regurgitation · n=120</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="kicker"><span class="no">¶</span><span class="label">What we ran</span></div>
+      <h2>The stack every fine-tuner already <em>recognizes.</em></h2>
+      <p class="prose">
+        TinyLlama-1.1B-Chat-v1.0, <code style="font-family:var(--mono);font-size:.86em">tatsu-lab/alpaca</code> official
+        <code style="font-family:var(--mono);font-size:.86em">text</code> column (5,000 shuffled rows), Hugging Face
+        <code style="font-family:var(--mono);font-size:.86em">Trainer</code> + LoRA r=8 on
+        <code style="font-family:var(--mono);font-size:.86em">q_proj,k_proj,v_proj,o_proj</code>, one epoch, lr 2e-4.
+        Canaries via the public snippet: <code style="font-family:var(--mono);font-size:.86em">n=32</code>,
+        <code style="font-family:var(--mono);font-size:.86em">n_controls=100</code>, family <code style="font-family:var(--mono);font-size:.86em">high_ppl</code>,
+        reps {1, 4, 16}, default inclusion coin 0.5 → <b>12 inserted</b>. Scoring
+        <code style="font-family:var(--mono);font-size:.86em">ref="auto"</code> /
+        <code style="font-family:var(--mono);font-size:.86em">disable_adapter()</code>.
+      </p>
+      <div class="tablewrap">
+        <table class="maptable">
+          <thead><tr><th>Knob</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Budget</td><td>0.388% of tokens (2,373 canary / ~608,798 host) — honest band, not the overfit demo</td></tr>
+            <tr><td>Hardware</td><td>Apple M3 Pro, 18 GB unified, MPS · Python 3.12.11 · torch 2.7.1 · transformers 4.56.2</td></tr>
+            <tr><td>Wall-clock</td><td>Load 156 s · data 311 s · train 2,205 s (36.8 min) · audit 323 s</td></tr>
+            <tr><td>Method</td><td><code style="font-family:var(--mono);font-size:.86em">base_calibrated_min_k_plus_plus</code> · <code style="font-family:var(--mono);font-size:.86em">reference.mode=disable_adapter</code></td></tr>
+            <tr><td>Report</td><td>schema 1.1.0 · tool 0.1.0 · sha256 <code style="font-family:var(--mono);font-size:.8em">9743dad2…1275ff4</code> · <code style="font-family:var(--mono);font-size:.86em">memaudit verify</code> pass</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="kicker"><span class="no">¶</span><span class="label">Takeaway</span></div>
+      <h2>Two verdicts, one honest <em>interval.</em></h2>
+      <p class="prose">
+        A properly-configured 1B-class LoRA on real Alpaca <b>did leak membership</b> at the pre-declared
+        1% FPR operating point (6 of 12 planted secrets). Ranking agreed: AUC 0.880. The same run
+        <b>did not regurgitate</b> — 0/12 canaries and 0/120 never-inserted controls completed from a prefix.
+        That is the product working, not a contradiction. A regurgitation-only test would have filed this as clean.
+      </p>
+      <div class="take">
+        The CI is wide because the README default inclusion coin only inserted 12 of 32 candidates.
+        6/12 is consistent with a true TPR from about 21% to 79%. We did not cherry-pick a scarier
+        threshold, inflate the canary budget, or drop the interval.
+      </div>
+      <p class="lim">
+        <b>Limitations:</b> 1.1B, one epoch, 5,000 rows, <code style="font-family:var(--mono);font-size:.86em">max_length</code> 256,
+        laptop MPS. n=12 is a starting-point sample — published audits use hundreds to thousands of canaries.
+        This is evidence of resistance (or not) to the attacks actually run. It is not a GDPR / AI Act / CNIL determination.
+      </p>
+      <div class="codeblock">
+        <div class="cb-head">reproduce</div>
+        <pre>pip install "memaudit[peft,trl]"
+python examples/alpaca_case_study.py</pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="provenance">
+      <span><b>report</b> examples/alpaca-case-study-report.json</span>
+      <span><b>sha256</b> 9743dad2e7bbd0c25d8306bafe84329b2d4c79136650d7bef1e3bf3a01275ff4</span>
+      <span><b>phone-home</b> false</span>
+      <span><b>¶</b> evidence, not compliance</span>
+      <span><a href="index.html">← back to memaudit</a></span>
+    </div>
+  </div>
+</footer>
+<script>
+document.querySelectorAll("[data-copy]").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    var txt = btn.getAttribute("data-copy");
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt);
+  });
+});
+</script>
+</body>
+</html>
