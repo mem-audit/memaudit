@@ -27,6 +27,7 @@ benchmarks/benchlog.txt
 *.json
 !examples/demo-report.json
 !examples/memaudit-manifest.json
+!hf/space/demo-report.json
 
 # Private research/ops (kept outside this repo under memaudit-private/)
 literature-review/

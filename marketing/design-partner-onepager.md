@@ -82,4 +82,4 @@ evidence; it does not make anyone compliant, and pilot materials say so explicit
 ---
 
 **Contact:** `ansh.singh.160305@gmail.com`
-**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `memaudit` · HF: `https://huggingface.co/memaudit` · License: Apache-2.0
+**Code:** `https://github.com/mem-audit/memaudit` · PyPI: `memaudit` · HF: `https://huggingface.co/memaudit` · Space: `https://huggingface.co/spaces/memaudit/memaudit-demo` · License: Apache-2.0

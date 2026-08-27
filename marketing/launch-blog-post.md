@@ -1,6 +1,7 @@
 <!-- Launch blog post. Publish on launch day.
      TODO before publishing: confirm PyPI link live,
-     add HF Space link when it exists (org is live: https://huggingface.co/memaudit),
+     Space URL after publish: https://huggingface.co/spaces/memaudit/memaudit-demo
+     (org: https://huggingface.co/memaudit),
      add author byline. -->
 
 # Your fine-tune remembers. Here's how to measure it.
@@ -278,7 +279,7 @@ trainer.train()   # writes <output_dir>/memaudit-report.json
 - Code: `https://github.com/mem-audit/memaudit`
 - PyPI: `https://pypi.org/project/memaudit/`
 - Hugging Face: `https://huggingface.co/memaudit`
-<!-- TODO: add report demo Space URL when the Space exists -->
+- Report demo Space (after publish): `https://huggingface.co/spaces/memaudit/memaudit-demo`
 
 If you fine-tune on regulated or confidential data and want to stress the PEFT pre-flight
 against your real pipeline, we're onboarding a small number of design partners:

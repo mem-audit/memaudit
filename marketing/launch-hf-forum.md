@@ -1,8 +1,9 @@
 <!-- Narrow technical launch post for the Hugging Face forums (Show and Tell) and
      ML-privacy Discords. Aim the launch at technically literate users who will
      stress the PEFT router.
-     TODO before posting: confirm PyPI live, add Space link when it exists.
-     HF org: https://huggingface.co/memaudit -->
+     TODO before posting: confirm PyPI live; swap Space URL after ./scripts/publish_hf.sh.
+     HF org: https://huggingface.co/memaudit
+     Space (after publish): https://huggingface.co/spaces/memaudit/memaudit-demo -->
 
 # [Show & Tell] memaudit — canary-based memorization auditing inside your Trainer/TRL loop (LoRA-aware). Feedback wanted on the PEFT pre-flight.
 
@@ -100,7 +101,8 @@ report (or a "it worked" report):
 
 Repo: `https://github.com/mem-audit/memaudit` · PyPI:
 `https://pypi.org/project/memaudit/` · HF: `https://huggingface.co/memaudit` ·
-30-second demo: `memaudit demo`
+Space (report demo): `https://huggingface.co/spaces/memaudit/memaudit-demo` ·
+30-second local demo: `memaudit demo`
 
 Happy to answer methodology questions in the thread — especially "why TPR@1%FPR instead
 of AUC" and "why canaries instead of post-hoc MIA," both of which have specific published
