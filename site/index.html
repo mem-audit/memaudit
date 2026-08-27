@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memaudit — training-data memorization auditor for fine-tuned LLMs</title>
+<meta name="description" content="pytest for training-data privacy. memaudit plants pre-registered canaries in your fine-tuning data and reports — with confidence intervals — whether the trained model leaks membership or regurgitates training text. Apache-2.0, fully local, LoRA/PEFT-aware.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23F6F1E7'/%3E%3Ctext x='32' y='46' font-size='44' text-anchor='middle' font-family='Georgia,serif' fill='%23B23A1D'%3E¶%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F1E7;
+    --paper-2:#EFE7D6;
+    --paper-3:#E9DFC9;
+    --ink:#191510;
+    --ink-soft:#5A5142;
+    --line:#D8CCB4;
+    --line-soft:#E4DAC5;
+    --accent:#B23A1D;
+    --accent-deep:#8E2C14;
+    --pass:#33684B;
+    --term-bg:#17130D;
+    --term-ink:#EDE4CF;
+    --term-dim:#8F8570;
+    --term-amber:#E0A94E;
+    --term-green:#8CB795;
+    --term-red:#E07856;
+    --serif:"Instrument Serif", Georgia, serif;
+    --body:"Newsreader", Georgia, serif;
+    --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:76px}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--body);
+    font-size:17px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    position:relative;
+  }
+  /* archival paper grain */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.42;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.05'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  ::selection{background:var(--accent);color:var(--paper)}
+  a{color:inherit}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+  .skip{position:absolute;left:-9999px}
+  .skip:focus{left:16px;top:12px;z-index:2000;background:var(--ink);color:var(--paper);padding:8px 14px;font-family:var(--mono);font-size:13px}
+
+  /* ---------- top bar: document header ---------- */
+  header.topbar{
+    position:sticky;top:0;z-index:900;
+    background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{display:flex;align-items:center;gap:22px;height:60px}
+  .wordmark{display:flex;align-items:baseline;gap:10px;text-decoration:none;white-space:nowrap}
+  .wordmark .pil{color:var(--accent);font-family:var(--serif);font-size:24px;line-height:1}
+  .wordmark .name{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:.02em}
+  .wordmark .ref{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
+  nav.docnav{margin-left:auto;display:flex;gap:20px;align-items:center}
+  nav.docnav a{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;color:var(--ink-soft);padding:4px 0;border-bottom:1px solid transparent;transition:color .18s,border-color .18s}
+  nav.docnav a:hover{color:var(--accent);border-color:var(--accent)}
+  .nav-gh{border:1px solid var(--line);border-radius:4px;padding:5px 12px !important;color:var(--ink) !important;background:var(--paper-2)}
+  .nav-gh:hover{background:var(--ink);color:var(--paper) !important;border-color:var(--ink) !important}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:84px 0 96px;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:56px;align-items:center}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px}
+  .eyebrow::before{content:"";display:inline-block;width:26px;height:1px;background:var(--accent)}
+  h1{
+    font-family:var(--serif);font-weight:400;
+    font-size:clamp(44px,6.2vw,78px);
+    line-height:1.02;letter-spacing:-.01em;margin:20px 0 24px;
+  }
+  h1 .mono-key{font-family:var(--mono);font-weight:500;font-size:.72em;background:var(--ink);color:var(--paper);padding:.06em .18em .1em;border-radius:6px;vertical-align:.06em;white-space:nowrap}
+  h1 em{font-style:italic;color:var(--accent)}
+  .lede{font-size:19px;line-height:1.6;color:var(--ink-soft);max-width:56ch;font-weight:400}
+  .lede strong{color:var(--ink);font-weight:600}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px;align-items:center}
+  .btn{font-family:var(--mono);font-size:13.5px;letter-spacing:.02em;text-decoration:none;border-radius:5px;padding:13px 22px;transition:transform .15s,box-shadow .15s,background .15s;display:inline-flex;align-items:center;gap:9px;cursor:pointer;border:1px solid var(--ink)}
+  .btn-primary{background:var(--ink);color:var(--paper)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(25,21,16,.25)}
+  .btn-ghost{background:transparent;color:var(--ink)}
+  .btn-ghost:hover{background:var(--paper-2);transform:translateY(-2px)}
+  .pipline{font-family:var(--mono);font-size:13.5px;background:var(--paper-2);border:1px dashed var(--line);border-radius:5px;padding:13px 18px;display:inline-flex;gap:12px;align-items:center;cursor:pointer;transition:border-color .18s}
+  .pipline:hover{border-color:var(--accent)}
+  .pipline .dollar{color:var(--accent)}
+  .pipline .copied{color:var(--pass);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  .factstrip{display:flex;flex-wrap:wrap;gap:0 26px;margin-top:38px;padding-top:22px;border-top:1px solid var(--line)}
+  .factstrip span{font-family:var(--mono);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);padding:4px 0;display:flex;gap:8px;align-items:center}
+  .factstrip b{color:var(--accent);font-weight:400}
+
+  /* the stamp */
+  .stamp{
+    position:absolute;
+    font-family:var(--mono);font-weight:600;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);border:2.5px solid var(--accent);border-radius:7px;
+    padding:10px 16px;transform:rotate(-7deg);opacity:.88;line-height:1.5;text-align:center;
+    box-shadow:inset 0 0 0 1.5px var(--paper), inset 0 0 0 3px var(--accent);
+    background:color-mix(in srgb, var(--paper) 55%, transparent);
+    pointer-events:none;
+    -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='120'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 .5 .9 1 1 1 1 1 1 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='300' height='120' filter='url(%23r)'/%3E%3C/svg%3E");
+    mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='120'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 .5 .9 1 1 1 1 1 1 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='300' height='120' filter='url(%23r)'/%3E%3C/svg%3E");
+  }
+  .stamp-hero{right:6px;top:8px;transform:rotate(6deg)}
+
+  /* ---------- terminal ---------- */
+  .term{
+    background:var(--term-bg);color:var(--term-ink);
+    border-radius:10px;border:1px solid #2A241A;
+    box-shadow:0 24px 60px -22px rgba(25,21,16,.5), 0 2px 0 rgba(255,255,255,.04) inset;
+    overflow:hidden;font-family:var(--mono);font-size:13px;line-height:1.75;
+  }
+  .term-head{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #2A241A;background:#1C1710}
+  .term-dot{width:10px;height:10px;border-radius:50%;background:#3A3226}
+  .term-dot:nth-child(1){background:#7A4433}
+  .term-dot:nth-child(2){background:#7A6A33}
+  .term-dot:nth-child(3){background:#3F6647}
+  .term-title{margin-left:auto;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--term-dim)}
+  .term-body{padding:18px 20px 22px;min-height:340px;white-space:pre-wrap;word-break:break-word}
+  .t-line{display:block}
+  .t-cmd{color:var(--term-ink);font-weight:500}
+  .t-cmd::before{content:"$ ";color:var(--term-green)}
+  .t-dim{color:var(--term-dim)}
+  .t-ok{color:var(--term-green)}
+  .t-val{color:var(--term-amber)}
+  .t-verdict{color:var(--term-ink);font-weight:600}
+  .t-verdict .t-val{font-weight:600}
+  .t-rule{color:#3A3226}
+  .t-note{color:var(--term-red);font-style:italic}
+  .cursor{display:inline-block;width:8px;height:15px;background:var(--term-amber);vertical-align:-2px;animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ---------- sections ---------- */
+  section{border-top:1px solid var(--line);padding:92px 0}
+  .kicker{display:flex;align-items:baseline;gap:16px;margin-bottom:22px}
+  .kicker .no{font-family:var(--serif);font-size:26px;color:var(--accent)}
+  .kicker .label{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(34px,4vw,52px);line-height:1.06;letter-spacing:-.005em;margin-bottom:18px;max-width:22ch}
+  h2 em{color:var(--accent)}
+  .section-lede{font-size:18px;color:var(--ink-soft);max-width:68ch;margin-bottom:44px}
+  .section-lede a{color:var(--accent-deep)}
+  .footnote{font-family:var(--mono);font-size:12px;color:var(--ink-soft);line-height:1.7;margin-top:22px;max-width:90ch}
+  .footnote b{color:var(--accent-deep);font-weight:500}
+
+  /* verdict cards */
+  .verdicts{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  .vcard{background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:34px 32px 30px;position:relative;transition:transform .2s,box-shadow .2s}
+  .vcard:hover{transform:translateY(-3px);box-shadow:0 16px 36px -18px rgba(25,21,16,.28)}
+  .vcard .vtag{position:absolute;top:-13px;left:26px;font-family:var(--mono);font-weight:600;font-size:11px;letter-spacing:.14em;background:var(--ink);color:var(--paper);padding:5px 12px;border-radius:4px}
+  .vcard h3{font-family:var(--serif);font-size:30px;font-weight:400;margin:6px 0 4px}
+  .vcard .vq{font-style:italic;color:var(--ink-soft);font-size:16.5px;margin-bottom:18px}
+  .vcard .vmethod{font-family:var(--mono);font-size:12.5px;line-height:1.8;color:var(--ink);background:var(--paper);border:1px solid var(--line-soft);border-radius:6px;padding:14px 16px;margin-bottom:18px}
+  .vcard .vmethod .k{color:var(--accent-deep)}
+  .vcard .vmetric{display:flex;align-items:baseline;gap:10px;font-family:var(--mono)}
+  .vcard .vmetric .m{font-size:15px;font-weight:600}
+  .vcard .vmetric .d{font-size:12px;color:var(--ink-soft)}
+  .disagree{margin-top:26px;border-left:3px solid var(--accent);background:var(--paper-2);padding:18px 24px;font-size:16px;max-width:80ch}
+  .disagree b{font-weight:600}
+
+  /* quickstart */
+  .qs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+  .qs-grid .span2{grid-column:1/-1}
+  .codeblock{position:relative;background:var(--term-bg);border-radius:10px;border:1px solid #2A241A;overflow:hidden}
+  .codeblock .cb-head{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;border-bottom:1px solid #2A241A;background:#1C1710}
+  .codeblock .cb-title{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--term-dim)}
+  .copybtn{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;background:none;border:1px solid #3A3226;border-radius:4px;color:var(--term-dim);padding:4px 10px;cursor:pointer;transition:color .15s,border-color .15s}
+  .copybtn:hover{color:var(--term-amber);border-color:var(--term-amber)}
+  .codeblock pre{padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.8;color:var(--term-ink);overflow-x:auto}
+  .codeblock .c-kw{color:var(--term-red)}
+  .codeblock .c-fn{color:var(--term-amber)}
+  .codeblock .c-str{color:var(--term-green)}
+  .codeblock .c-com{color:var(--term-dim);font-style:italic}
+  .codeblock .c-prompt{color:var(--term-green)}
+  .placement-note{margin-top:24px;font-size:16px;color:var(--ink-soft);max-width:78ch}
+  .placement-note code{font-family:var(--mono);font-size:.85em;background:var(--paper-2);border:1px solid var(--line-soft);border-radius:4px;padding:1px 6px}
+
+  /* pre-flight */
+  .preflight-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:start}
+  .pf-fact{background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:30px 30px 26px;margin-bottom:20px}
+  .pf-fact .num{font-family:var(--mono);font-weight:600;font-size:34px;color:var(--accent);letter-spacing:-.02em}
+  .pf-fact .num .arr{color:var(--ink-soft);font-weight:400;font-size:24px}
+  .pf-fact p{font-size:15.5px;color:var(--ink-soft);margin-top:8px}
+  .pf-fact p b{color:var(--ink)}
+  ul.pf-checks{list-style:none;margin-top:6px}
+  ul.pf-checks li{padding:13px 0 13px 34px;border-bottom:1px solid var(--line-soft);position:relative;font-size:16px}
+  ul.pf-checks li::before{content:"✓";position:absolute;left:4px;top:12px;color:var(--pass);font-family:var(--mono);font-weight:600}
+  ul.pf-checks li code{font-family:var(--mono);font-size:.82em;background:var(--paper-2);border:1px solid var(--line-soft);border-radius:4px;padding:1px 6px}
+  ul.pf-checks li b{font-weight:600}
+
+  /* evidence / metrics */
+  .demo-panel{position:relative;background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:40px 38px 34px;overflow:hidden}
+  .demo-panel .stamp{right:26px;top:22px;transform:rotate(5deg);font-size:11px;padding:8px 13px}
+  .demo-meta{padding-right:220px}
+  @media (max-width:700px){
+    .demo-panel .stamp{position:static;display:inline-block;transform:rotate(-3deg);margin-bottom:16px}
+    .demo-meta{padding-right:0}
+  }
+  .metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:30px;margin-top:26px}
+  .metric .big{font-family:var(--mono);font-weight:600;font-size:clamp(28px,3vw,40px);letter-spacing:-.02em}
+  .metric .big small{font-size:.45em;color:var(--ink-soft);font-weight:400}
+  .metric .lab{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-top:8px;line-height:1.6}
+  .ci-bar{position:relative;height:6px;background:var(--paper-3);border-radius:3px;margin-top:12px;overflow:visible}
+  .ci-fill{position:absolute;top:0;bottom:0;background:var(--accent);opacity:.8;border-radius:3px}
+  .ci-tick{position:absolute;top:-3px;width:2px;height:12px;background:var(--ink)}
+  .ci-lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-top:6px}
+  .demo-cap{font-size:15px;color:var(--ink-soft);margin-top:30px;padding-top:20px;border-top:1px dashed var(--line);max-width:90ch}
+  .demo-cap b{color:var(--accent-deep)}
+  .bench-pending{margin-top:26px;border:1.5px dashed var(--line);border-radius:10px;padding:26px 30px;display:flex;gap:20px;align-items:baseline;background:color-mix(in srgb, var(--paper-2) 40%, transparent)}
+  .bench-pending .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper);background:var(--ink-soft);border-radius:4px;padding:4px 10px;white-space:nowrap}
+  .bench-pending p{font-size:15.5px;color:var(--ink-soft)}
+  .estimate-line{margin-top:26px;font-size:16.5px}
+  .estimate-line b{font-weight:600}
+  .estimate-line .est{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:2px 7px;margin-left:8px;vertical-align:2px}
+
+  /* compliance */
+  .quotes{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:44px}
+  .quote{border-left:3px solid var(--accent);background:var(--paper-2);padding:24px 26px;border-radius:0 8px 8px 0}
+  .quote .q-ref{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep);margin-bottom:10px}
+  .quote blockquote{font-style:italic;font-size:16.5px;line-height:1.6}
+  .quote blockquote b{font-style:normal;font-weight:600}
+  table{width:100%;border-collapse:collapse}
+  .maptable th{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);text-align:left;padding:12px 16px;border-bottom:2px solid var(--ink)}
+  .maptable td{padding:15px 16px;border-bottom:1px solid var(--line-soft);font-size:15.5px;vertical-align:top}
+  .maptable td:first-child{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--accent-deep);font-weight:500}
+  .maptable tr:hover td{background:var(--paper-2)}
+  .maptable td .roadmap{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);border:1px solid var(--line);border-radius:3px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+  .aiact{margin-top:36px;background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:24px 28px;font-size:16px;max-width:100%}
+  .aiact b{font-weight:600}
+  .aiact .date{font-family:var(--mono);color:var(--accent-deep);font-size:.92em}
+
+  /* landscape table */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+  .cmp{min-width:880px}
+  .cmp th{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;padding:16px 18px;border-bottom:2px solid var(--ink);color:var(--ink-soft);vertical-align:bottom;line-height:1.6}
+  .cmp th.us-col{color:var(--accent-deep)}
+  .cmp td{padding:15px 18px;border-bottom:1px solid var(--line-soft);font-size:14.5px;vertical-align:top;line-height:1.55}
+  .cmp tr:last-child td{border-bottom:none}
+  .cmp td:first-child{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--ink-soft);text-transform:uppercase;white-space:nowrap;padding-top:18px}
+  .cmp .us-col{background:var(--paper-2);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+  .cmp td.us-col{font-weight:500}
+  .cmp .yes{color:var(--pass);font-weight:600}
+  .cmp .no{color:var(--accent-deep)}
+  .cmp .unk{color:var(--ink-soft);font-style:italic}
+
+  /* faq */
+  .faq{max-width:860px}
+  details{border-top:1px solid var(--line)}
+  details:last-of-type{border-bottom:1px solid var(--line)}
+  summary{list-style:none;cursor:pointer;padding:22px 44px 22px 0;position:relative;font-family:var(--serif);font-size:23px;transition:color .15s}
+  summary::-webkit-details-marker{display:none}
+  summary:hover{color:var(--accent-deep)}
+  summary::after{content:"+";position:absolute;right:6px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:22px;color:var(--accent);transition:transform .25s}
+  details[open] summary::after{transform:translateY(-50%) rotate(45deg)}
+  .faq-a{padding:0 0 26px;color:var(--ink-soft);font-size:16.5px;max-width:72ch}
+  .faq-a b{color:var(--ink);font-weight:600}
+  .faq-a code{font-family:var(--mono);font-size:.85em;background:var(--paper-2);border:1px solid var(--line-soft);border-radius:4px;padding:1px 6px}
+
+  /* partners CTA */
+  .partner{position:relative;background:var(--term-bg);color:var(--term-ink);border-radius:14px;padding:64px 58px;overflow:hidden}
+  .partner::before{content:"¶";position:absolute;right:-30px;bottom:-90px;font-family:var(--serif);font-size:380px;color:#241E14;line-height:1}
+  .partner h2{color:var(--term-ink);max-width:26ch}
+  .partner h2 em{color:var(--term-amber)}
+  .partner p{color:#B5AA8F;font-size:17.5px;max-width:62ch;position:relative}
+  .partner ul{margin:22px 0 30px;position:relative;list-style:none;columns:2;gap:34px;max-width:760px}
+  .partner li{font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--term-ink);padding:8px 0 8px 24px;position:relative;break-inside:avoid}
+  .partner li::before{content:"→";position:absolute;left:0;color:var(--term-amber)}
+  .btn-amber{background:var(--term-amber);color:var(--term-bg);border-color:var(--term-amber);font-weight:600}
+  .btn-amber:hover{transform:translateY(-2px);box-shadow:0 10px 26px -8px rgba(224,169,78,.55)}
+  .partner .small{font-size:13px;font-family:var(--mono);color:var(--term-dim);margin-top:22px}
+
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:60px 0 34px;background:var(--paper-2)}
+  .foot-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:44px}
+  .foot-grid h4{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:14px}
+  .foot-grid a{display:block;font-size:15px;text-decoration:none;color:var(--ink);padding:4px 0;transition:color .15s}
+  .foot-grid a:hover{color:var(--accent)}
+  .foot-brand p{font-size:15px;color:var(--ink-soft);max-width:38ch;margin-top:12px}
+  .provenance{border-top:1px dashed var(--line);padding-top:22px;font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);display:flex;flex-wrap:wrap;gap:8px 22px;line-height:1.8}
+  .provenance b{color:var(--accent-deep);font-weight:500}
+
+  /* reveal animation */
+  .reveal{opacity:0;transform:translateY(16px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .hero .fade{opacity:0;animation:fadeUp .8s cubic-bezier(.2,.7,.2,1) forwards}
+  .hero .d1{animation-delay:.05s}.hero .d2{animation-delay:.15s}.hero .d3{animation-delay:.28s}.hero .d4{animation-delay:.42s}.hero .d5{animation-delay:.55s}
+  @media (prefers-reduced-motion: reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+    .hero .fade{opacity:1;animation:none}
+    .cursor{animation:none}
+    html{scroll-behavior:auto}
+  }
+
+  /* responsive */
+  @media (max-width:980px){
+    .hero-grid{grid-template-columns:1fr;gap:44px}
+    .verdicts{grid-template-columns:1fr}
+    .qs-grid{grid-template-columns:1fr}
+    .preflight-grid{grid-template-columns:1fr;gap:30px}
+    .metric-row{grid-template-columns:repeat(2,1fr)}
+    .quotes{grid-template-columns:1fr}
+    .foot-grid{grid-template-columns:1fr 1fr}
+    nav.docnav a:not(.nav-gh){display:none}
+    .partner{padding:44px 30px}
+    .partner ul{columns:1}
+  }
+  @media (max-width:560px){
+    .metric-row{grid-template-columns:1fr}
+    .stamp-hero{display:none}
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="wordmark" href="#top" aria-label="memaudit home">
+      <span class="pil">¶</span>
+      <span class="name">memaudit</span>
+      <span class="ref">v0.1 · audit doc</span>
+    </a>
+    <nav class="docnav" aria-label="Sections">
+      <a href="#verdicts">Verdicts</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#preflight">Pre-flight</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#compliance">Compliance</a>
+      <a href="#landscape">Landscape</a>
+      <a href="#faq">FAQ</a>
+      <a class="nav-gh" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" id="top" style="border-top:none">
+    <div class="wrap hero-grid">
+      <div style="position:relative">
+        <div class="stamp stamp-hero fade d5">Evidence ·<br>not compliance</div>
+        <p class="eyebrow fade d1">memaudit — training-data memorization auditor for fine-tuned LLMs</p>
+        <h1 class="fade d2"><span class="mono-key">pytest</span> for<br>training-data <em>privacy.</em></h1>
+        <p class="lede fade d3">
+          Plant pre-registered canaries in your fine-tuning data. Train as usual.
+          memaudit reports — <strong>with confidence intervals</strong> — whether the trained model
+          leaks membership or regurgitates training text. Two verdicts, one versioned JSON report,
+          negative controls always. Runs entirely where you train.
+        </p>
+        <div class="cta-row fade d4">
+          <button class="pipline" data-copy="pip install memaudit" aria-label="Copy pip install command">
+            <span class="dollar">$</span> pip install memaudit <span class="copy-state" aria-hidden="true">⧉</span>
+          </button>
+          <a class="btn btn-primary" href="#quickstart">Read the quickstart</a>
+          <a class="btn btn-ghost" href="#partners">Design partners</a>
+        </div>
+        <div class="factstrip fade d5">
+          <span><b>◆</b> Apache-2.0</span>
+          <span><b>◆</b> Fully local · no phone-home</span>
+          <span><b>◆</b> LoRA / PEFT-aware</span>
+          <span><b>◆</b> EDPB 28/2024-shaped report</span>
+        </div>
+      </div>
+      <div class="fade d3">
+        <div class="term" aria-label="Terminal demo of memaudit">
+          <div class="term-head">
+            <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+            <span class="term-title">measured demo · examples/demo.py</span>
+          </div>
+          <div class="term-body" id="heroTerm"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ¶01 TWO VERDICTS ============ -->
+  <section id="verdicts">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 01</span><span class="label">The two-verdict audit</span></div>
+      <h2 class="reveal">Membership and regurgitation <em>routinely disagree.</em> You need both numbers.</h2>
+      <p class="section-lede reveal">
+        Models trained with the goldfish loss show near-zero verbatim extraction yet remain highly
+        detectable by likelihood attacks; head-only fine-tunes maximize membership signal with almost
+        no extractable text. A loss-only audit is wrong in both directions — so memaudit never ships one.
+        Every audit reports two separate verdicts, side by side.
+      </p>
+      <div class="verdicts">
+        <article class="vcard reveal">
+          <span class="vtag">Verdict 1</span>
+          <h3>Membership leakage</h3>
+          <p class="vq">"Can an attacker with log-prob access tell what was trained on?"</p>
+          <div class="vmethod">
+            <span class="k">attack</span>&nbsp;&nbsp; base-calibrated Min-K%++, secret-span only<br>
+            <span class="k">cost</span>&nbsp;&nbsp;&nbsp;&nbsp; 2 forward passes per sequence (target + base)<br>
+            <span class="k">controls</span> thresholds set on held-out, never-inserted canaries
+          </div>
+          <div class="vmetric">
+            <span class="m">TPR @ 1% FPR</span>
+            <span class="d">+ Clopper–Pearson 95% CI + log-log ROC · AUC demoted to secondary</span>
+          </div>
+        </article>
+        <article class="vcard reveal">
+          <span class="vtag">Verdict 2</span>
+          <h3>Regurgitation</h3>
+          <p class="vq">"Does the model emit training content when prompted with a prefix?"</p>
+          <div class="vmethod">
+            <span class="k">attack</span>&nbsp;&nbsp; greedy prefix-prompted completion, prefix grid<br>
+            <span class="k">scoring</span>&nbsp; exact match · BLEU &gt; 0.75 · sliding-window NED ≤ 0.1<br>
+            <span class="k">targets</span>&nbsp; canaries per repetition tier + flagged real records
+          </div>
+          <div class="vmetric">
+            <span class="m">Regurgitation rate</span>
+            <span class="d">per exposure tier (1× / 4× / 16×) · negative-control rate always printed</span>
+          </div>
+        </article>
+      </div>
+      <p class="disagree reveal">
+        <b>Honesty is the feature:</b> the report names what it does <i>not</i> cover — model inversion,
+        reconstruction, attribute inference — because under EDPB Opinion 28/2024 ¶55, test results are
+        evidence only for the attacks actually run.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ ¶02 QUICKSTART ============ -->
+  <section id="quickstart">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 02</span><span class="label">Quickstart</span></div>
+      <h2 class="reveal">Five lines in your training script. <em>One report</em> out.</h2>
+      <p class="section-lede reveal">
+        Injection happens before training (transformers builds the dataloader before any callback fires —
+        so memaudit gives you a pre-train <code style="font-family:var(--mono);font-size:.86em">inject()</code> helper
+        and a thin callback). The same engine runs post-hoc from the CLI.
+      </p>
+      <div class="qs-grid">
+        <div class="codeblock reveal">
+          <div class="cb-head"><span class="cb-title">1 · install</span><button class="copybtn" data-copy="pip install memaudit">copy</button></div>
+          <pre><span class="c-prompt">$</span> pip install memaudit
+<span class="c-prompt">$</span> pip install <span class="c-str">"memaudit[peft]"</span>   <span class="c-com"># LoRA / adapter-toggle scoring</span></pre>
+        </div>
+        <div class="codeblock reveal">
+          <div class="cb-head"><span class="cb-title">3 · or post-hoc, from the CLI</span><button class="copybtn" data-copy="memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json --dataset train.jsonl --ref auto">copy</button></div>
+          <pre><span class="c-prompt">$</span> memaudit audit --model ./out \
+    --canary-set ./out/memaudit-manifest.json \
+    --dataset train.jsonl --ref auto
+<span class="c-com"># --ref auto: disable_adapter() on unmerged LoRA,
+#             else pass a base checkpoint path</span></pre>
+        </div>
+        <div class="codeblock span2 reveal">
+          <div class="cb-head"><span class="cb-title">2 · inside your training script</span><button class="copybtn" data-copy="from memaudit import generate_canaries, inject, MemorizationAuditCallback
+
+canaries = generate_canaries(tokenizer, n=200, n_controls=200, family=&quot;high_ppl&quot;, seed=0)
+train_ds, manifest = inject(train_ds, canaries, fmt=&quot;auto&quot;, seed=0)
+trainer.add_callback(MemorizationAuditCallback(trainer=trainer, manifest=manifest))
+trainer.train()  # writes <output_dir>/memaudit-report.json">copy</button></div>
+          <pre><span class="c-kw">from</span> memaudit <span class="c-kw">import</span> generate_canaries, inject, MemorizationAuditCallback
+
+canaries = <span class="c-fn">generate_canaries</span>(tokenizer, n=<span class="c-val" style="color:var(--term-amber)">200</span>, n_controls=<span class="c-val" style="color:var(--term-amber)">200</span>, family=<span class="c-str">"high_ppl"</span>, seed=<span class="c-val" style="color:var(--term-amber)">0</span>)
+train_ds, manifest = <span class="c-fn">inject</span>(train_ds, canaries, fmt=<span class="c-str">"auto"</span>, seed=<span class="c-val" style="color:var(--term-amber)">0</span>)
+trainer.add_callback(<span class="c-fn">MemorizationAuditCallback</span>(trainer=trainer, manifest=manifest))
+trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report.json</span></pre>
+        </div>
+      </div>
+      <p class="placement-note reveal">
+        Canary placement is format-aware and verified: the secret always lands on the trainable side of the
+        record (<code>completion</code> / assistant turn / <code>text</code> body). A prompt-side canary would be
+        loss-masked to <code>labels=-100</code> and silently zero the audit — <code>inject()</code> refuses that placement,
+        and the callback re-scans at <code>on_train_begin</code> to prove every canary survived tokenization, masking, and packing.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ ¶03 LORA PRE-FLIGHT ============ -->
+  <section id="preflight">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 03</span><span class="label">The LoRA / PEFT pre-flight</span></div>
+      <h2 class="reveal">The pre-flight router <em>no other tool has.</em></h2>
+      <div class="preflight-grid">
+        <div>
+          <p class="section-lede reveal" style="margin-bottom:26px">
+            Most fine-tunes are LoRA fine-tunes — and PEFT configs silently invalidate naive audits.
+            The published example: new-token canary audits collapse when embeddings are frozen, which is
+            exactly what standard LoRA does. memaudit checks embedding trainability <i>before</i> training
+            and routes canary families accordingly — a router, not a blocker.
+          </p>
+          <div class="pf-fact reveal">
+            <div class="num">0.74 <span class="arr">→</span> 0.05</div>
+            <p><b>Audit signal collapse with frozen embeddings</b> — new-token canary audit under DP-LoRA,
+            Panda et&nbsp;al., ICLR 2025 (Table 14). The default high-perplexity regular-token family survives:
+            TPR@1%FPR 0.94–0.99 under LoRA r=4 (Meeus et&nbsp;al., ICML 2025).</p>
+          </div>
+          <p class="footnote reveal">
+            <b>Claim scope:</b> "no other tool" per our August 2026 landscape scan of open-source and commercial
+            offerings — no OSS tool, no enterprise platform's public materials, and no announced regulator
+            library addresses frozen-embedding × canary-family interaction. See ¶&nbsp;06.
+          </p>
+        </div>
+        <div>
+          <ul class="pf-checks">
+            <li class="reveal"><b>Embedding-trainability router</b> — gates the new-token family; memaudit never resizes your vocab</li>
+            <li class="reveal"><code>modules_to_save=[embed_tokens, lm_head]</code> flagged as <b>raising</b> the membership-risk tier</li>
+            <li class="reveal"><b>Reference model for free:</b> <code>disable_adapter()</code> scores base + fine-tune from one model copy; merged adapters and <code>bias≠"none"</code> detected, base checkpoint fallback</li>
+            <li class="reveal"><b>Loss-masking &amp; packing checks</b> — <code>completion_only_loss</code>, assistant-only templates, packing truncation: placements that would silently zero canaries are caught</li>
+            <li class="reveal"><b>Survival scan at <code>on_train_begin</code></b> — token-level proof each canary exists in the actual batches</li>
+            <li class="reveal"><b>Refuses to fabricate:</b> fewer than 100 held-out controls → no TPR@1%FPR headline, by design</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ¶04 EVIDENCE / MEASURED NUMBERS ============ -->
+  <section id="evidence">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 04</span><span class="label">Measured numbers</span></div>
+      <h2 class="reveal">Honest metrics, <em>labeled at scale.</em></h2>
+      <p class="section-lede reveal">
+        These are the only measured numbers so far: an end-to-end instrument check on a deliberately
+        overfit tiny model. They prove the pipeline detects what it should and stays silent on controls —
+        they are <b>not</b> production-scale claims.
+      </p>
+
+      <div class="demo-panel reveal">
+        <div class="stamp">Tiny-model<br>instrument check</div>
+        <p class="demo-meta" style="font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)">
+          examples/demo.py · randomly-initialized TinyDemoLM (hidden=64, vocab=256) · full FT · deliberately overfit · seed 0
+        </p>
+        <div class="metric-row">
+          <div class="metric">
+            <div class="big">1.000</div>
+            <div class="lab">TPR @ 1% FPR<br>16 canaries / 100 controls</div>
+            <div class="ci-bar" aria-hidden="true">
+              <div class="ci-fill" style="left:79.4%;right:0"></div>
+              <div class="ci-tick" style="left:calc(100% - 2px)"></div>
+            </div>
+            <div class="ci-lab"><span>CI95 [0.794,</span><span>1.000]</span></div>
+          </div>
+          <div class="metric">
+            <div class="big">15<small>/16</small></div>
+            <div class="lab">Regurgitated at 16× tier<br>exact / BLEU&gt;0.75 / NED≤0.1</div>
+          </div>
+          <div class="metric">
+            <div class="big">0.000</div>
+            <div class="lab">Negative-control<br>regurgitation (n=100)</div>
+          </div>
+          <div class="metric">
+            <div class="big">~30<small>&nbsp;s</small></div>
+            <div class="lab">End-to-end on a laptop<br>6.0 s train + 18.1 s audit</div>
+          </div>
+        </div>
+        <p class="demo-cap">
+          <b>Scale label (mandatory):</b> tiny randomly-initialized model, canaries ≈ 99% of tokens by design so the
+          instrument can show a positive signal. Not a pretrained-GPT-2 or 7B result. The CI is wide because n=16 —
+          the report says so instead of hiding it. If a model doesn't memorize, memaudit refuses the headline rather
+          than inventing one.
+        </p>
+      </div>
+
+      <!-- BENCHMARK-TABLE: filled from benchmarks/ when available -->
+      <div class="bench-pending reveal">
+        <span class="tag">Benchmark pending</span>
+        <p>A production-scale LoRA benchmark (pretrained multi-billion-parameter model, ≥200 inserted + ≥200 held-out
+        canaries, repetition grid {1, 4, 16}) is being produced now. This section will carry that table — with seeds,
+        CIs, and negative controls — the day it lands.</p>
+      </div>
+
+      <p class="estimate-line reveal">
+        Designed compute envelope: a production-scale audit (7B-class model, ~200 canaries + 400 controls +
+        2,000 real records) targets <b>5–20 minutes on a single 24&nbsp;GB GPU</b> — two forward passes per sequence,
+        no shadow models, no retraining. <span class="est">Estimate — benchmark pending</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ ¶05 COMPLIANCE ============ -->
+  <section id="compliance">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 05</span><span class="label">Regulatory mapping</span></div>
+      <h2 class="reveal">The report regulators <em>describe,</em> generated where you train.</h2>
+      <p class="section-lede reveal">
+        EDPB Opinion 28/2024 made documented, state-of-the-art testing against membership inference and
+        regurgitation the operative GDPR evidence standard for AI models. memaudit's report is designed
+        field-by-field against those paragraphs. It produces test evidence — it does not make you compliant.
+      </p>
+
+      <div class="quotes">
+        <div class="quote reveal">
+          <div class="q-ref">EDPB Opinion 28/2024 · ¶ 55 — the testing paragraph</div>
+          <blockquote>"…successful testing which covers widely known, state-of-the-art attacks can only be
+          <b>evidence for the resistance to those attacks</b>… this could include, among others, structured testing
+          against: (i) attribute and <b>membership inference</b>; (ii) exfiltration; (iii) <b>regurgitation of training
+          data</b>; (iv) model inversion; or (v) reconstruction attacks."</blockquote>
+        </div>
+        <div class="quote reveal">
+          <div class="q-ref">EDPB Opinion 28/2024 · ¶ 43 — the anonymity test</div>
+          <blockquote>"…both (i) the likelihood of direct (including probabilistic) <b>extraction</b> of personal data…
+          as well as (ii) the likelihood of obtaining, intentionally or not, such personal data <b>from queries</b>,
+          should be <b>insignificant</b> for any data subject."</blockquote>
+        </div>
+      </div>
+
+      <table class="maptable reveal">
+        <thead><tr><th>Requirement</th><th>What it asks for</th><th>Where it lives in memaudit's report</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>¶ 55 (i)/(iii)</td>
+            <td>Structured testing against membership inference and regurgitation</td>
+            <td>The two verdicts — canary MIA at TPR@1%FPR with CI; prefix-prompted regurgitation per exposure tier. Attribute inference, model inversion, reconstruction: named out of scope.</td>
+          </tr>
+          <tr>
+            <td>¶ 55</td>
+            <td>Scope, frequency, quantity and quality of tests</td>
+            <td>Canary counts, repetition grid, seeds, run date, tool version, negative-control results — all in the versioned JSON. Multi-seed variance mode <span class="roadmap">roadmap</span></td>
+          </tr>
+          <tr>
+            <td>¶ 58 (c)</td>
+            <td>Threat model and risk assessments behind the measures</td>
+            <td>Per-canary-family threat-model fields: attacker access level (log-probs vs. text), knowledge assumptions.</td>
+          </tr>
+          <tr>
+            <td>¶ 58 (e)</td>
+            <td>Controls "to limit or assess the success and impact of main attacks (regurgitation, membership inference attacks, exfiltration, etc.)"</td>
+            <td>Quantified results with confidence intervals; negative controls always run; per-record list redacted by default.</td>
+          </tr>
+          <tr>
+            <td>¶ 46</td>
+            <td>Release context (public model vs. internal) changes expected testing level</td>
+            <td>Release-context field: user declares public API / internal / open-weights; the report states the implied attack surface.</td>
+          </tr>
+          <tr>
+            <td>¶ 58</td>
+            <td>Documentation an SA can inspect</td>
+            <td>Provenance: schema version, config, seeds, model/dataset fingerprint hashes. Formal EDPB/CNIL annex export <span class="roadmap">roadmap</span></td>
+          </tr>
+          <tr>
+            <td>CNIL</td>
+            <td>Documented model-status analysis; re-identification attack tests; producible on demand</td>
+            <td>The report is that artifact for the attacks it runs. CNIL's own caveat is encoded: a negative quick regurgitation test alone proves nothing — memaudit pairs it with calibrated MIA and says so.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="aiact reveal">
+        <b>Where the AI Act fits:</b> it never mandates memorization testing by name — EDPB 28/2024 and CNIL guidance
+        are the operative hooks today. High-risk obligations apply from <span class="date">2 December 2027</span> (Annex III)
+        and <span class="date">2 August 2028</span> (Annex I embedded) per Regulation (EU) 2026/1744; GPAI documentation
+        duties have applied since <span class="date">2 August 2025</span>. If you've read about an "August 2026 high-risk
+        deadline," that date moved. For US framing: NIST AI 600-1 names <i>data memorization</i> as a generative-AI risk.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ¶06 LANDSCAPE ============ -->
+  <section id="landscape">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 06</span><span class="label">Landscape</span></div>
+      <h2 class="reveal">Where memaudit sits — <em>factually.</em></h2>
+      <p class="section-lede reveal">
+        As of August 2026, no shipped tool — open or commercial — does trainer-integrated, canary-based,
+        PEFT-aware memorization auditing. Here is the honest comparison, from public materials.
+      </p>
+      <div class="tablewrap reveal">
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th></th>
+              <th class="us-col">memaudit v0.1</th>
+              <th>Closed enterprise platforms<br>(DynamoEval-class)</th>
+              <th>PANAME<br>(regulator library)</th>
+              <th>Research attack code<br>(MIMIR, ML Privacy Meter)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Availability</td>
+              <td class="us-col"><span class="yes">pip install</span> · Apache-2.0 · free</td>
+              <td>Custom-quote enterprise sales; SaaS / VPC</td>
+              <td class="unk">Unreleased — autumn 2026; open source planned</td>
+              <td>Free research code; 13–16 months without updates as of Aug 2026</td>
+            </tr>
+            <tr>
+              <td>Your model &amp; data</td>
+              <td class="us-col"><span class="yes">Never leave your machine</span></td>
+              <td>Uploaded to the vendor platform</td>
+              <td class="unk">Library — likely local; details TBD</td>
+              <td>Local scripts</td>
+            </tr>
+            <tr>
+              <td>When it audits</td>
+              <td class="us-col">Inside the training loop (callback) + post-hoc CLI</td>
+              <td>Post-hoc, on an already-trained model</td>
+              <td>Post-hoc</td>
+              <td>Post-hoc</td>
+            </tr>
+            <tr>
+              <td>Canaries + negative controls</td>
+              <td class="us-col"><span class="yes">Yes</span> — pre-registered, coin-flipped, controls in every audit</td>
+              <td><span class="no">No published canary methodology</span></td>
+              <td class="unk">None announced</td>
+              <td><span class="no">No</span> (post-hoc MIA on real records only)</td>
+            </tr>
+            <tr>
+              <td>Headline statistic</td>
+              <td class="us-col">TPR @ 1% FPR + Clopper–Pearson CI</td>
+              <td>AUC / ROC-first (per public materials)</td>
+              <td class="unk">Unknown</td>
+              <td>Varies by script; typically AUC</td>
+            </tr>
+            <tr>
+              <td>LoRA / PEFT handling</td>
+              <td class="us-col"><span class="yes">Pre-flight router</span>: frozen-embedding detection, adapter-toggle reference, family gating</td>
+              <td>Adapters accepted as an upload format; no published PEFT-aware test design</td>
+              <td class="unk">Not in public materials</td>
+              <td>Limited configs; no pre-flight</td>
+            </tr>
+            <tr>
+              <td>Compliance artifact</td>
+              <td class="us-col">Versioned JSON designed against EDPB 28/2024 ¶55/¶58; hashes &amp; seeds</td>
+              <td>Auto-generated PDF audit reports</td>
+              <td>GDPR-oriented by design (CNIL / ANSSI / Inria)</td>
+              <td><span class="no">None</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote reveal">
+        <b>Fair-play notes:</b> DynamoEval-class platforms cover attack types memaudit doesn't (PII extraction and
+        inference tests) and unadvertised features can't be ruled out — this table reflects public materials as of
+        August 2026. PANAME (CNIL + ANSSI + PEReN + Inria) is a <b>complement, not a competitor</b>: when it releases,
+        memaudit will align report vocabulary and attack taxonomy with it — "PANAME-compatible evidence, produced
+        automatically where you already train." Deployment scanners like garak solve a different problem
+        (what your deployed model says) and pair well with training-side evidence.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ ¶07 FAQ ============ -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="kicker reveal"><span class="no">¶ 07</span><span class="label">Questions, answered plainly</span></div>
+      <h2 class="reveal">Frequently asked.</h2>
+      <div class="faq" style="margin-top:34px">
+        <details class="reveal">
+          <summary>Does memaudit phone home?</summary>
+          <div class="faq-a"><b>No.</b> No telemetry, no account, no SaaS backend. The audit runs on your machine, next to
+          your training job; the report is a local JSON file. Local execution is the product — that's a structural
+          guarantee a hosted service can't match, and it's why the license is Apache-2.0.</div>
+        </details>
+        <details class="reveal">
+          <summary>Does a passing report make me GDPR-compliant?</summary>
+          <div class="faq-a"><b>No — and be suspicious of any tool that says yes.</b> memaudit produces the documented,
+          state-of-the-art test evidence that EDPB Opinion 28/2024 ¶55/¶58 describe, scoped honestly to the attacks it
+          actually runs (membership inference and regurgitation). Per ¶55, that is evidence of resistance <i>to those
+          attacks</i> — not a compliance certificate. Your lawful basis, DPIA, and the rest of your file remain yours.</div>
+        </details>
+        <details class="reveal">
+          <summary>Does it support LoRA / PEFT fine-tunes?</summary>
+          <div class="faq-a"><b>Yes — by construction, not as an afterthought.</b> The pre-flight router checks embedding
+          trainability (gating canary families that frozen embeddings would silently break), flags
+          <code>modules_to_save</code> configs that raise membership risk, and uses <code>disable_adapter()</code> so one
+          model copy provides both fine-tuned and base scores. Merged adapters are detected; you pass a base checkpoint
+          instead. Full fine-tunes work too — the reference model is loaded separately.</div>
+        </details>
+        <details class="reveal">
+          <summary>Will 200 canaries hurt my model?</summary>
+          <div class="faq-a">Defaults target <b>≤ 0.1% of training tokens</b>. At that budget, published audits report
+          ≤ 1 perplexity point of utility cost (Panda et&nbsp;al., ICLR 2025) — and the cost shows up in your eval metrics
+          if it happens, so you'd see it. Canaries are short standalone records, mutually diverse to limit interference.</div>
+        </details>
+        <details class="reveal">
+          <summary>Didn't MIMIR show membership inference doesn't work on LLMs?</summary>
+          <div class="faq-a">MIMIR (Duan et&nbsp;al., 2024) showed MIAs are near-random <b>at pretraining scale</b> — huge
+          deduplicated corpora seen for about one epoch. Fine-tuning is the opposite regime: small datasets, multiple
+          epochs, large models. Capacity analysis (Morris et&nbsp;al., 2025) and LoRA fine-tune head-to-heads (LoRA-Leak,
+          2025; Meeus et&nbsp;al., ICML 2025 — TPR@1%FPR 0.94+ with canaries under LoRA r=4) put fine-tunes squarely where
+          the signal exists. memaudit also never trusts raw scores: every audit calibrates on its own held-out controls
+          and reports confidence intervals.</div>
+        </details>
+        <details class="reveal">
+          <summary>My model is already trained. Too late?</summary>
+          <div class="faq-a">Use the post-hoc CLI: set-level membership testing on a sample of your real records against
+          held-out data, plus prefix-prompted regurgitation checks. It's labeled <b>weaker evidence</b> in the report —
+          without pre-registered canaries and controls, post-hoc MIA is exactly the setup the research community has
+          shown to be misleading (Aerni et&nbsp;al., 2024). Best practice: inject canaries in your next training run.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ¶08 DESIGN PARTNERS ============ -->
+  <section id="partners">
+    <div class="wrap">
+      <div class="partner reveal">
+        <div class="kicker" style="margin-bottom:18px"><span class="no" style="color:var(--term-amber)">¶ 08</span><span class="label" style="color:var(--term-dim)">Design partners</span></div>
+        <h2>Fine-tuning on data you'd have to <em>explain to a regulator?</em></h2>
+        <p>We're onboarding a small number of design partners — teams fine-tuning on confidential or regulated
+        data with Hugging Face Trainer / TRL — to harden the audit against real pipelines. A pilot includes:</p>
+        <ul>
+          <li>Guided integration into your existing training loop</li>
+          <li>Custom canary families for your data formats</li>
+          <li>Multi-seed runs and variance review</li>
+          <li>A working session walking your compliance owner through the report</li>
+          <li>Priority on the roadmap — especially PEFT-router coverage</li>
+          <li>We ask for: honest feedback, and (negotiable) anonymized case-study rights</li>
+        </ul>
+        <a class="btn btn-amber" href="mailto:ansh.singh.160305@gmail.com?subject=memaudit%20design%20partner%20pilot">Email us about a pilot →</a>
+        <p class="small">memaudit produces test evidence; it does not make you compliant. We'll say that in the pilot too.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="wordmark" href="#top"><span class="pil">¶</span><span class="name">memaudit</span></a>
+        <p>Training-data memorization auditor for fine-tuned LLMs. Free, open, runs where you train,
+        sends nothing anywhere.</p>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <!-- Space demo still TBD. -->
+        <a href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
+        <a href="https://pypi.org/project/memaudit/">PyPI ↗</a>
+        <a href="https://huggingface.co/memaudit">Hugging Face ↗</a>
+        <a href="https://github.com/mem-audit/memaudit/blob/main/CHANGELOG.md">Changelog ↗</a>
+      </div>
+      <div>
+        <h4>Evidence</h4>
+        <a href="https://www.edpb.europa.eu/system/files/2024-12/edpb_opinion_202428_ai-models_en.pdf">EDPB Opinion 28/2024 ↗</a>
+        <a href="https://www.cnil.fr/en">CNIL AI guidance ↗</a>
+        <a href="#evidence">Measured demo numbers</a>
+        <a href="#landscape">Landscape comparison</a>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache-2.0 license ↗</a>
+        <a href="https://github.com/mem-audit/memaudit/blob/main/legal/DISCLAIMER.md">Disclaimer ↗</a>
+      </div>
+    </div>
+    <div class="provenance">
+      <span><b>license</b> Apache-2.0</span>
+      <span><b>report schema</b> 1.0.0</span>
+      <span><b>runs</b> local-only · no phone-home</span>
+      <span><b>claims policy</b> every metric on this page carries its scale label</span>
+      <span><b>¶</b> evidence, not compliance</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- hero terminal: replay of the real measured demo ---- */
+  var lines = [
+    {c:"t-cmd",  t:"pip install memaudit"},
+    {c:"t-cmd",  t:"memaudit demo"},
+    {c:"t-dim",  t:"  train       TinyDemoLM (hidden=64, vocab=256) · 6.0 s · loss 0.127"},
+    {c:"t-dim",  t:"  pre-flight  placement OK · coins recorded · 16 inserted / 100 controls"},
+    {c:"t-dim",  t:"  audit       base-calibrated Min-K%++ · secret-span · 18.1 s"},
+    {c:"t-rule", t:"  ─────────────────────────────────────────────────"},
+    {c:"t-verdict", h:"  membership     TPR@1%FPR <span class='t-val'>1.000</span>   CI95 <span class='t-val'>[0.794, 1.000]</span>"},
+    {c:"t-verdict", h:"  regurgitation  <span class='t-val'>15/16</span> at 16×      controls <span class='t-ok'>0/100</span>"},
+    {c:"t-dim",  t:"  report      memaudit-report.json · schema 1.0.0 · seed 0"},
+    {c:"t-note", t:"  # instrument check: deliberately-overfit tiny model — not a 7B claim"}
+  ];
+  var term = document.getElementById("heroTerm");
+  function renderLine(l){
+    var el = document.createElement("span");
+    el.className = "t-line " + l.c;
+    if (l.h) { el.innerHTML = l.h; } else { el.textContent = l.t; }
+    return el;
+  }
+  if (reduced) {
+    lines.forEach(function(l){ term.appendChild(renderLine(l)); });
+  } else {
+    var cursor = document.createElement("span");
+    cursor.className = "cursor";
+    term.appendChild(cursor);
+    var i = 0;
+    function next(){
+      if (i >= lines.length) return;
+      term.insertBefore(renderLine(lines[i]), cursor);
+      i++;
+      var delay = i <= 2 ? 520 : (lines[i-1] && lines[i-1].c === "t-rule" ? 200 : 340);
+      setTimeout(next, delay);
+    }
+    setTimeout(next, 650);
+  }
+
+  /* ---- scroll reveal with per-section stagger ---- */
+  var revealed = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window && !reduced) {
+    var seen = new WeakMap();
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        var sec = e.target.closest("section") || document.body;
+        var n = seen.get(sec) || 0;
+        seen.set(sec, n + 1);
+        e.target.style.transitionDelay = Math.min(n * 70, 350) + "ms";
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      });
+    }, {threshold: .12, rootMargin: "0px 0px -6% 0px"});
+    revealed.forEach(function(el){ io.observe(el); });
+  } else {
+    revealed.forEach(function(el){ el.classList.add("in"); });
+  }
+
+  /* ---- copy buttons ---- */
+  document.querySelectorAll("[data-copy]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var txt = btn.getAttribute("data-copy");
+      function done(){
+        var state = btn.querySelector(".copy-state");
+        if (state) { state.textContent = "copied"; state.className = "copied"; }
+        else { var old = btn.textContent; btn.textContent = "copied ✓"; setTimeout(function(){ btn.textContent = old; }, 1600); }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done, done);
+      } else { done(); }
+    });
+  });
+})();
+</script>
+</body>
+</html>

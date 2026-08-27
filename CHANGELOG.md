@@ -1,0 +1,27 @@
+# Changelog
+
+## 0.1.0 - 2026-08-27
+
+First buyer-facing release.
+
+- Two-verdict audit: membership (base-calibrated Min-K%++ on the secret span) and regurgitation (prefix-prompted exact / BLEU / NED).
+- Pre-train `inject()` + `MemorizationAuditCallback` + shared `run_audit` / `memaudit audit`.
+- `--canary-set` and `--manifest` are the same flag (inject() JSON).
+- TPR@1% FPR is refused unless there are at least 100 held-out controls. Default `n_controls` is 100.
+- `--ref auto` uses `disable_adapter()` on an unmerged LoRA. Full fine-tunes must pass `--ref <base>` or explicit `--ref none` (downgraded headline). No silent fallback.
+- `from memaudit import inject` is the public helper; the implementation module is `memaudit.injection` (no submodule shadowing).
+- Reports are strict JSON (NaN/Inf become null). `phone_home` is always false.
+- `memaudit demo` / `python examples/demo.py`: tiny overfit instrument check with measured numbers.
+- `memaudit doctor` / `scripts/acceptance.sh`: environment + report schema acceptance.
+- Known-bad stack: transformers 5.16.x + torch 2.6.dev (FSDP import hang). Verified LoRA stack: Python 3.12, torch 2.7.1, transformers 4.56.2, peft 0.20.0, trl 0.29.1. Clean wheel install also resolved torch 2.13.0 + transformers 5.16.1.
+
+Compliance evidence layer (report schema 1.1.0, additive on 1.0.0):
+
+- `compliance_annex` in every report: EDPB Opinion 28/2024 mapping — attack-coverage table (membership inference para 55(i) and regurgitation para 55(iii) in scope; attribute inference, exfiltration para 55(ii), inversion para 55(iv), reconstruction para 55(v) explicitly out of scope), threat model per attack and per canary family used (from the published literature), test-scope metadata (para 55: n canaries, reps grid, seeds, dataset rows, negative controls, run date, tool version), and a limitations statement quoting para 55.
+- `memaudit report --annex <report.json>`: renders the annex as human-readable markdown (reconstructed on the fly for schema-1.0.x reports).
+- Release context (para 46): user-declared `--release-context public-api|internal|open-weights` / `run_audit(release_context=...)` / callback arg; default `unspecified`; never inferred.
+- Provenance completed: canary-manifest SHA-256, dataset fingerprint (row count + first/last record hashes + optional file hash), model/adapter fingerprint (config hash, parameter count, weight-file hashes for local dirs under 2 GiB), full resolved audit config, python/torch/transformers/peft/trl versions, UTC timestamp.
+- Report self-hash: `report_sha256` over the canonicalized content, stamped at write time plus a `<report>.sha256` sidecar; `memaudit verify <report.json>` recomputes and checks (exit 0/1). GPG/sigstore signing stays a release-runbook step; memaudit does not manage keys.
+- Multi-seed mode: `run_audit(..., seeds=[0,1,2])` / `--seeds 0,1,2` / callback `seeds=` adds a `stability` block (`variance: {tpr_mean, tpr_min, tpr_max, tpr_std, per_seed}` + per-seed real-record sampling). Labeled audit-procedure variance (bootstrap threshold calibration + real-record sampling), not training variance; single-seed remains the default.
+- `benchmarks/run_sft_benchmark.py`: live `trl.SFTTrainer` end-to-end benchmark (prompt/completion, `completion_only_loss=True`, LoRA on distilgpt2) plus a gated integration test (`MEMAUDIT_RUN_SFT=1 pytest -m integration`).
+- `benchmarks/run_lora_benchmark.py`: `--reps`, `--seeds`, `--release-context` flags; reports written through the self-hashing writer.

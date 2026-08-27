@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memaudit"
+version = "0.1.0"
+description = "Local Trainer/TRL plugin that audits fine-tunes for membership leakage and regurgitation: two verdicts, canaries, PEFT pre-flight, no phone-home"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "memaudit contributors" }]
+keywords = [
+    "memorization",
+    "membership-inference",
+    "canary",
+    "privacy",
+    "huggingface",
+    "trl",
+    "lora",
+    "peft",
+    "gdpr",
+    "edpb",
+    "fine-tuning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Legal Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    "transformers>=4.56.2",
+    "torch>=2.5",
+    "datasets>=2.20",
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+peft = ["peft>=0.15,<0.21"]
+trl = ["trl>=0.15,<1.0"]
+hub = ["huggingface_hub>=0.24"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+memaudit = "memaudit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mem-audit/memaudit"
+Documentation = "https://ansh200516.github.io/memaudit-site/"
+Source = "https://github.com/mem-audit/memaudit"
+Issues = "https://github.com/mem-audit/memaudit/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+memaudit = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    "ignore:n_controls=.*floor required:UserWarning",
+]
+markers = [
+    "smoke: optional CPU integration with a tiny randomly-initialized model",
+    "demo: slower one-command demo / live train",
+    "peft: requires peft to import",
+    "integration: live TRL SFTTrainer run (needs trl + hub model; opt in with MEMAUDIT_RUN_SFT=1)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,4 @@
+2a46687c65738be249e2c2fe865a69fa029525e35940ebd775e08c8f7fa8c4eb  demo-report.json
+# memaudit report_sha256: SHA-256 of the canonicalized report content
+# (sorted keys, compact separators, NaN->null, minus report_sha256).
+# Not a raw file hash. Check with: memaudit verify demo-report.json

@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+.venv-*/
+venv/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+
+# Heavy benchmark run outputs (keep scripts + README)
+benchmarks/out/
+benchmarks/out-*/
+benchmarks/benchlog.txt
+
+# JSON caches by default; keep checked-in demo artifacts
+*.json
+!examples/demo-report.json
+!examples/memaudit-manifest.json
+
+# Private research/ops (kept outside this repo under memaudit-private/)
+literature-review/
+memaudit-*-plan.md
+memaudit-final-idea-and-plan.md
+RELEASE-RUNBOOK.md
