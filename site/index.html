@@ -215,9 +215,19 @@
   .ci-lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-top:6px}
   .demo-cap{font-size:15px;color:var(--ink-soft);margin-top:30px;padding-top:20px;border-top:1px dashed var(--line);max-width:90ch}
   .demo-cap b{color:var(--accent-deep)}
-  .bench-pending{margin-top:26px;border:1.5px dashed var(--line);border-radius:10px;padding:26px 30px;display:flex;gap:20px;align-items:baseline;background:color-mix(in srgb, var(--paper-2) 40%, transparent)}
-  .bench-pending .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper);background:var(--ink-soft);border-radius:4px;padding:4px 10px;white-space:nowrap}
-  .bench-pending p{font-size:15.5px;color:var(--ink-soft)}
+  .bench-block{margin-top:32px}
+  .bench-block .bench-head{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:baseline;margin-bottom:14px}
+  .bench-block .bench-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper);background:var(--ink);border-radius:4px;padding:4px 10px;white-space:nowrap}
+  .bench-block .bench-scale{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--ink-soft)}
+  .bench-block .bench-note{font-size:15px;color:var(--ink-soft);margin-top:16px;max-width:92ch;line-height:1.55}
+  .bench-block .bench-note b{color:var(--accent-deep)}
+  .benchtbl{min-width:720px}
+  .benchtbl th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);text-align:left;padding:12px 14px;border-bottom:2px solid var(--ink);vertical-align:bottom;line-height:1.45}
+  .benchtbl td{padding:13px 14px;border-bottom:1px solid var(--line-soft);font-size:14px;vertical-align:top;line-height:1.5}
+  .benchtbl tr:last-child td{border-bottom:none}
+  .benchtbl td:first-child{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--accent-deep);white-space:nowrap}
+  .benchtbl .mono{font-family:var(--mono);font-size:12.5px}
+  .benchtbl .risky td{background:color-mix(in srgb, var(--accent) 6%, transparent)}
   .estimate-line{margin-top:26px;font-size:16.5px}
   .estimate-line b{font-weight:600}
   .estimate-line .est{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:2px 7px;margin-left:8px;vertical-align:2px}
@@ -526,9 +536,9 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
       <div class="kicker reveal"><span class="no">¶ 04</span><span class="label">Measured numbers</span></div>
       <h2 class="reveal">Honest metrics, <em>labeled at scale.</em></h2>
       <p class="section-lede reveal">
-        These are the only measured numbers so far: an end-to-end instrument check on a deliberately
-        overfit tiny model. They prove the pipeline detects what it should and stays silent on controls —
-        they are <b>not</b> production-scale claims.
+        Two measured surfaces: a deliberately overfit tiny-model instrument check (positive control),
+        then pretrained distilgpt2 + LoRA at an honest ≤1% canary budget. Scale labels are mandatory —
+        these are <b>not</b> 7B results.
       </p>
 
       <div class="demo-panel reveal">
@@ -567,18 +577,73 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
         </p>
       </div>
 
-      <!-- BENCHMARK-TABLE: filled from benchmarks/ when available -->
-      <div class="bench-pending reveal">
-        <span class="tag">Benchmark pending</span>
-        <p>A production-scale LoRA benchmark (pretrained multi-billion-parameter model, ≥200 inserted + ≥200 held-out
-        canaries, repetition grid {1, 4, 16}) is being produced now. This section will carry that table — with seeds,
-        CIs, and negative controls — the day it lands.</p>
+      <!-- BENCHMARK-TABLE: measured 2026-08-27, Apple MPS, distilgpt2 + LoRA -->
+      <div class="bench-block reveal">
+        <div class="bench-head">
+          <span class="bench-tag">Measured · pretrained LoRA</span>
+          <span class="bench-scale">distilgpt2 · Apple MPS · 2026-08-27 · budget ≤1% of host tokens</span>
+        </div>
+        <div class="tablewrap">
+          <table class="benchtbl">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Config</th>
+                <th>n / controls</th>
+                <th>Budget</th>
+                <th>TPR @ 1% FPR</th>
+                <th>95% CI</th>
+                <th>AUC</th>
+                <th>Stability (seeds 0,1,2)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SFT</td>
+                <td>trl.SFTTrainer · 1&nbsp;ep · r=8 · lr&nbsp;2e-4</td>
+                <td class="mono">16 / 100</td>
+                <td class="mono">0.93%</td>
+                <td class="mono"><b>0.000</b></td>
+                <td class="mono">[0, 0.206]</td>
+                <td class="mono">0.516</td>
+                <td class="mono">0.000 / 0.000 / 0.000</td>
+              </tr>
+              <tr>
+                <td>C</td>
+                <td>HF Trainer · 1&nbsp;ep · r=8 · lr&nbsp;2e-4 · host auto-grown 80k</td>
+                <td class="mono"><b>100 / 200</b></td>
+                <td class="mono">0.77%</td>
+                <td class="mono"><b>0.000</b></td>
+                <td class="mono">[0, 0.036]</td>
+                <td class="mono">0.586</td>
+                <td class="mono">0.000 / 0.010 / 0.010</td>
+              </tr>
+              <tr class="risky">
+                <td>D · risky</td>
+                <td>HF Trainer · <b>5&nbsp;ep · r=16 · lr&nbsp;1e-3</b> · host auto-grown 80k</td>
+                <td class="mono">100 / 200</td>
+                <td class="mono">0.77%</td>
+                <td class="mono"><b>0.000</b> primary</td>
+                <td class="mono">[0, 0.036]</td>
+                <td class="mono"><b>0.848</b></td>
+                <td class="mono"><b>0.000 / 0.090 / 0.090</b> <span style="color:var(--ink-soft)">(9/100 on 2 of 3 seeds)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="bench-note">
+          <b>Scale label (mandatory):</b> pretrained distilgpt2 + LoRA at an honest canary budget — not a 7B result,
+          and not the tiny overfit demo above. Primary TPR stays <b>0.000</b> on every row; Run&nbsp;D is reported
+          exactly as measured: AUC&nbsp;0.848 with stability <b>0.000 / 0.090 / 0.090</b> (9/100 canaries on seeds 1 and 2).
+          No fabricated headline TPR. Reproduce via <code style="font-family:var(--mono);font-size:.85em">benchmarks/run_lora_benchmark.py</code>
+          and <code style="font-family:var(--mono);font-size:.85em">benchmarks/run_sft_benchmark.py</code>.
+        </p>
       </div>
 
       <p class="estimate-line reveal">
         Designed compute envelope: a production-scale audit (7B-class model, ~200 canaries + 400 controls +
         2,000 real records) targets <b>5–20 minutes on a single 24&nbsp;GB GPU</b> — two forward passes per sequence,
-        no shadow models, no retraining. <span class="est">Estimate — benchmark pending</span>
+        no shadow models, no retraining. <span class="est">Estimate — 7B not yet measured</span>
       </p>
     </div>
   </section>

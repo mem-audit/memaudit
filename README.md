@@ -83,14 +83,14 @@ Same pretrained distilgpt2 + LoRA on MPS, 2026-08-27. The script auto-grew the h
 |---|---|---|
 | Host / members / controls | 80,000 / 100 / 200 | 80,000 / 100 / 200 |
 | Canary token budget | 0.77% | 0.77% |
-| **TPR @ 1% FPR** | **0.000** (0/100) | *(measuring)* |
-| 95% CI | **[0.000, 0.036]** | *(measuring)* |
-| AUC (secondary) | 0.586 | *(measuring)* |
-| Regurgitation / control regurgitation | 0/100 / 0.00 (n=200) | *(measuring)* |
-| Stability: per-seed TPR (seeds 0,1,2) | 0.000 / 0.010 / 0.010 (mean 0.007) | *(measuring)* |
-| Train / audit wall-clock | 753 s / 173 s | *(measuring)* |
+| **TPR @ 1% FPR** (primary calibration) | **0.000** (0/100) | **0.000** (0/100) |
+| 95% CI | **[0.000, 0.036]** | [0.000, 0.036] |
+| **AUC (secondary)** | 0.586 | **0.848** |
+| Regurgitation / control regurgitation | 0/100 / 0.00 (n=200) | 0/100 / 0.00 (n=200) |
+| Stability: per-seed TPR (seeds 0,1,2) | 0.000 / 0.010 / 0.010 (mean 0.007) | **0.000 / 0.090 / 0.090** (mean 0.060) |
+| Train / audit wall-clock | 753 s / 173 s | 2,757 s / 170 s |
 
-n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at **3.6%** with 95% confidence (vs 20.6% at n=16), and the stability block shows the threshold-calibration wobble (+-1 detection across seeds) instead of hiding it. See `benchmarks/README.md` for all rows and reproduce commands.
+n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at **3.6%** with 95% confidence (vs 20.6% at n=16). Run D is why the risky config is labeled risky -- and why multi-seed mode exists: the AUC jumps 0.59 -> **0.85** (the member/control distributions clearly separated), and while the primary threshold calibration still lands at 0 detections, two of three bootstrap calibrations detect **9/100 canaries at 1% FPR**. A single-seed run would have reported Run C and Run D as identical headlines; the `stability` block shows the risky config is sitting on the detection edge. No verbatim regurgitation in either run. See `benchmarks/README.md` for all rows and reproduce commands.
 
 ## TRL SFTTrainer live run (measured)
 

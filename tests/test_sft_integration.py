@@ -54,12 +54,14 @@ def test_sft_live_end_to_end(tmp_path):
         timeout=1800,
     )
     assert proc.returncode == 0, proc.stderr[-4000:]
-    report_path = out_dir / "memaudit_report.json"
+    report_path = out_dir / "sft-benchmark-report.json"
     assert report_path.is_file()
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["schema_version"].startswith("1.1")
     assert report["report_sha256"]
     assert report["compliance_annex"]["release_context"]["declared"] == "internal"
     assert report["stability"]["variance"]["per_seed"]
-    assert report["preflight"]["survival"]["n_found"] == report["benchmark"]["n_canaries"]
-    assert (out_dir / "memaudit_report.json.sha256").is_file()
+    # include_prob=1.0 in the script: every requested member is inserted and must survive
+    assert report["preflight"]["survival"]["n_found"] == report["benchmark"]["n_members_requested"]
+    assert report["preflight"]["survival"]["n_fully_masked"] == 0
+    assert (out_dir / "sft-benchmark-report.json.sha256").is_file()

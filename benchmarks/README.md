@@ -12,9 +12,11 @@ Scoring used live `peft.disable_adapter()` (`--ref auto`) on one model copy. Run
 | B | HF Trainer | 3 ep, r=16, lr 5e-4 | 10,000 | 16 / 100 | 0.93% | **0.000** (0/16) | [0.000, 0.206] | 0.657 | 0/16 | - (single seed) | 274 s / 71 s |
 | SFT | **trl.SFTTrainer** | 1 ep, r=8, lr 2e-4, `completion_only_loss` | 10,000 | 16 / 100 | 0.93% | **0.000** (0/16) | [0.000, 0.206] | 0.516 | 0/16 | TPR 0.000 all seeds | 192 s / 52 s |
 | C | HF Trainer | 1 ep, r=8, lr 2e-4 | 80,000 (auto-grown) | **100 / 200** | 0.77% | **0.000** (0/100) | **[0.000, 0.036]** | 0.586 | 0/100 | TPR 0.000 / 0.010 / 0.010 (mean 0.007) | 753 s / 173 s |
-| D (deliberately risky config) | HF Trainer | **5 ep, r=16, lr 1e-3** | 80,000 (auto-grown) | 100 / 200 | 0.77% | see below | see below | see below | see below | see below | see below |
+| D (deliberately risky config) | HF Trainer | **5 ep, r=16, lr 1e-3** | 80,000 (auto-grown) | 100 / 200 | 0.77% | **0.000** (0/100) primary | [0.000, 0.036] | **0.848** | 0/100 | **TPR 0.000 / 0.090 / 0.090** (mean 0.060) | 2,757 s / 170 s |
 
-All rows are **pretrained distilgpt2 at honest canary budget (<=1% of tokens)** -- the scale label matters: these are not 7B numbers, and the tiny overfit demo's TPR=1.0 does not belong in this table. Run C is the headline: n=100 members tightens the CI by ~6x vs n=16 (0/100 detected caps the true TPR at 3.6% with 95% confidence; 0/16 only capped it at 20.6%). Negative controls: n=200, regurgitation 0.00. Run C report: `benchmarks/out-n100/lora-benchmark-report.json` (self-hash verified at write time).
+All rows are **pretrained distilgpt2 at honest canary budget (<=1% of tokens)** -- the scale label matters: these are not 7B numbers, and the tiny overfit demo's TPR=1.0 does not belong in this table. Run C is the headline: n=100 members tightens the CI by ~6x vs n=16 (0/100 detected caps the true TPR at 3.6% with 95% confidence; 0/16 only capped it at 20.6%). Negative controls: n=200, regurgitation 0.00 in both n=100 runs.
+
+Run D is the honest "detected case": the primary threshold calibration still lands at 0/100, but AUC jumps 0.59 -> **0.85** and two of the three bootstrap calibrations (seeds 1, 2) detect **9/100 canaries at 1% FPR**. The risky config pushed the member distribution to the edge of the 1%-FPR operating point; single-seed reporting would have hidden that, the `stability` block does not. Reports: `benchmarks/out-n100/lora-benchmark-report.json`, `benchmarks/out-n100-risky/lora-benchmark-report.json` (both self-hash verified at write time).
 
 ## Environment (this machine, 2026-08-27)
 
