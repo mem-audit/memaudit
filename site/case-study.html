@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flagship case study — TinyLlama + Alpaca · memaudit</title>
-<meta name="description" content="Measured memaudit run: TinyLlama-1.1B-Chat LoRA on 5,000 Stanford Alpaca rows. TPR@1%FPR 0.500 (6/12), CI [0.211, 0.789], regurgitation 0/12. Honest 0.39% canary budget.">
+<meta name="description" content="Powered memaudit run: TinyLlama-1.1B-Chat LoRA on 20,000 Stanford Alpaca rows, 100 canaries / 200 controls, budget 0.907%. TPR@1%FPR 0.180 [0.110, 0.269], AUC 0.776, regurgitation 0/100.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23F6F1E7'/%3E%3Ctext x='32' y='46' font-size='44' text-anchor='middle' font-family='Georgia,serif' fill='%23B23A1D'%3E¶%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,7 +48,8 @@
   .btn-ghost{background:transparent;color:var(--ink)}
   .pipline{font-family:var(--mono);font-size:13.5px;background:var(--paper-2);border:1px dashed var(--line);border-radius:5px;padding:13px 18px;display:inline-flex;gap:12px;align-items:center;cursor:pointer}
   .pipline .dollar{color:var(--accent)}
-  .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;margin:48px 0 8px}
+  .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin:48px 0 8px}
+  .scale{font-family:var(--mono);font-size:12px;color:var(--ink-soft);line-height:1.65;margin-top:14px;max-width:78ch}
   .metric{background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:22px 20px}
   .metric .big{font-family:var(--mono);font-weight:600;font-size:clamp(26px,3vw,36px);letter-spacing:-.02em}
   .metric .lab{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:8px;line-height:1.55}
@@ -95,39 +96,35 @@
 <main>
   <section class="hero" style="border-top:none">
     <div class="wrap">
-      <p class="eyebrow">Flagship public example · measured 2026-08-27 · Apple M3 Pro / MPS</p>
+      <p class="eyebrow">Flagship · powered n=100 / 200 · measured 2026-08-28 · Apple M3 Pro / MPS</p>
       <h1>TinyLlama + Alpaca leaked <em>membership.</em> It did not spit the data back.</h1>
       <p class="lede">
-        One epoch of LoRA (r=8) on <strong>TinyLlama-1.1B-Chat</strong> and <strong>5,000 real Stanford Alpaca rows</strong>,
-        audited with the README 15-line API at an honest <strong>0.388%</strong> canary budget.
-        TPR@1%FPR <strong>0.500</strong> (6/12), 95% CI <strong>[0.211, 0.789]</strong>.
-        Regurgitation <strong>0/12</strong>. Negative-control regurgitation <strong>0.00</strong>.
+        memaudit plants canaries in a fine-tune and reports membership leakage and regurgitation.
+        This page is the sellable run: <strong>TinyLlama-1.1B-Chat</strong>, real Alpaca, LoRA r=8, one epoch,
+        <strong>100 inserted canaries</strong>, <strong>200 held-out controls</strong>, budget <strong>0.907%</strong>.
       </p>
       <div class="cta-row">
-        <button class="pipline" data-copy="pip install &quot;memaudit[peft,trl]&quot; && python examples/alpaca_case_study.py">
-          <span class="dollar">$</span> pip install "memaudit[peft,trl]" && python examples/alpaca_case_study.py
+        <button class="pipline" data-copy="pip install memaudit">
+          <span class="dollar">$</span> pip install memaudit
         </button>
-        <a class="btn btn-primary" href="https://github.com/mem-audit/memaudit/blob/main/docs/case-study-alpaca.md">Repo write-up ↗</a>
-        <a class="btn btn-ghost" href="https://github.com/mem-audit/memaudit/blob/main/examples/alpaca-case-study-report.json">Report JSON ↗</a>
+        <a class="btn btn-primary" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
+        <a class="btn btn-ghost" href="https://github.com/mem-audit/memaudit/blob/main/examples/alpaca-powered-report.json">Report JSON ↗</a>
       </div>
       <div class="metrics">
         <div class="metric">
-          <div class="big">0.500</div>
-          <div class="lab">TPR @ 1% FPR · 6/12 detected · CI95 [0.211, 0.789]</div>
+          <div class="big">0.180</div>
+          <div class="lab">Leak rate at 1% FPR · (18/100) · CI95 [0.110, 0.269]</div>
         </div>
         <div class="metric">
-          <div class="big">0.880</div>
-          <div class="lab">AUC (secondary) · member/control ranking</div>
+          <div class="big">0.776</div>
+          <div class="lab">Member / control rank · AUC (secondary)</div>
         </div>
         <div class="metric">
-          <div class="big">0<span style="font-size:.5em;color:var(--ink-soft)">/12</span></div>
-          <div class="lab">Regurgitation · exact / BLEU&gt;0.75 / NED≤0.1</div>
-        </div>
-        <div class="metric">
-          <div class="big">0.00</div>
-          <div class="lab">Negative-control regurgitation · n=120</div>
+          <div class="big">0/100</div>
+          <div class="lab">Secrets spat back · regurgitation rate</div>
         </div>
       </div>
+      <p class="scale">TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.907% · 20,000 host rows</p>
     </div>
   </section>
 
@@ -137,24 +134,27 @@
       <h2>The stack every fine-tuner already <em>recognizes.</em></h2>
       <p class="prose">
         TinyLlama-1.1B-Chat-v1.0, <code style="font-family:var(--mono);font-size:.86em">tatsu-lab/alpaca</code> official
-        <code style="font-family:var(--mono);font-size:.86em">text</code> column (5,000 shuffled rows), Hugging Face
+        <code style="font-family:var(--mono);font-size:.86em">text</code> column (<b>20,000</b> shuffled rows), Hugging Face
         <code style="font-family:var(--mono);font-size:.86em">Trainer</code> + LoRA r=8 on
         <code style="font-family:var(--mono);font-size:.86em">q_proj,k_proj,v_proj,o_proj</code>, one epoch, lr 2e-4.
-        Canaries via the public snippet: <code style="font-family:var(--mono);font-size:.86em">n=32</code>,
-        <code style="font-family:var(--mono);font-size:.86em">n_controls=100</code>, family <code style="font-family:var(--mono);font-size:.86em">high_ppl</code>,
-        reps {1, 4, 16}, default inclusion coin 0.5 → <b>12 inserted</b>. Scoring
-        <code style="font-family:var(--mono);font-size:.86em">ref="auto"</code> /
+        README API: <code style="font-family:var(--mono);font-size:.86em">generate_canaries</code> +
+        <code style="font-family:var(--mono);font-size:.86em">inject</code> + callback.
+        <code style="font-family:var(--mono);font-size:.86em">n=100</code>,
+        <code style="font-family:var(--mono);font-size:.86em">n_controls=200</code>,
+        <code style="font-family:var(--mono);font-size:.86em">include_prob=1.0</code> so 100 canaries actually land,
+        family <code style="font-family:var(--mono);font-size:.86em">high_ppl</code>, reps {1, 4, 16}.
+        Scoring <code style="font-family:var(--mono);font-size:.86em">ref="auto"</code> /
         <code style="font-family:var(--mono);font-size:.86em">disable_adapter()</code>.
       </p>
       <div class="tablewrap">
         <table class="maptable">
           <thead><tr><th>Knob</th><th>Value</th></tr></thead>
           <tbody>
-            <tr><td>Budget</td><td>0.388% of tokens (2,373 canary / ~608,798 host) — honest band, not the overfit demo</td></tr>
+            <tr><td>Budget</td><td>0.907% of tokens (23,077 canary / 2,521,431 host) — ≤1% cap, host grown from 5k to 20k</td></tr>
             <tr><td>Hardware</td><td>Apple M3 Pro, 18 GB unified, MPS · Python 3.12.11 · torch 2.7.1 · transformers 4.56.2</td></tr>
-            <tr><td>Wall-clock</td><td>Load 156 s · data 311 s · train 2,205 s (36.8 min) · audit 323 s</td></tr>
+            <tr><td>Wall-clock</td><td>load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h 43 min (05:11–09:54 IST)</td></tr>
             <tr><td>Method</td><td><code style="font-family:var(--mono);font-size:.86em">base_calibrated_min_k_plus_plus</code> · <code style="font-family:var(--mono);font-size:.86em">reference.mode=disable_adapter</code></td></tr>
-            <tr><td>Report</td><td>schema 1.1.0 · tool 0.1.0 · sha256 <code style="font-family:var(--mono);font-size:.8em">9743dad2…1275ff4</code> · <code style="font-family:var(--mono);font-size:.86em">memaudit verify</code> pass</td></tr>
+            <tr><td>Report</td><td>schema 1.1.0 · tool 0.1.0 · <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-powered-report.json</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -164,22 +164,20 @@
   <section>
     <div class="wrap">
       <div class="kicker"><span class="no">¶</span><span class="label">Takeaway</span></div>
-      <h2>Two verdicts, one honest <em>interval.</em></h2>
+      <h2>How to read this, then the <em>numbers.</em></h2>
       <p class="prose">
-        A properly-configured 1B-class LoRA on real Alpaca <b>did leak membership</b> at the pre-declared
-        1% FPR operating point (6 of 12 planted secrets). Ranking agreed: AUC 0.880. The same run
-        <b>did not regurgitate</b> — 0/12 canaries and 0/120 never-inserted controls completed from a prefix.
-        That is the product working, not a contradiction. A regurgitation-only test would have filed this as clean.
+        <b>Membership</b> asks whether an attacker with logprobs can tell a canary was trained on.
+        <b>Regurgitation</b> asks whether the model emits the secret from a prefix. They routinely disagree.
+        A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, <b>did leak membership</b> at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR <b>0.180</b>, 95% CI <b>[0.110, 0.269]</b>). Ranking agreed — AUC <b>0.776</b>. The same run <b>did not regurgitate</b>: 0/100 canaries and 0/200 negative controls completed from a prefix.
       </p>
       <div class="take">
-        The CI is wide because the README default inclusion coin only inserted 12 of 32 candidates.
-        6/12 is consistent with a true TPR from about 21% to 79%. We did not cherry-pick a scarier
-        threshold, inflate the canary budget, or drop the interval.
+        n=100 / 200 is the sellable sample. A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) is appendix-only —
+        that interval is too wide for a buyer headline. We did not cherry-pick a threshold or hide the distilgpt2 n=100 rows.
       </div>
       <p class="lim">
-        <b>Limitations:</b> 1.1B, one epoch, 5,000 rows, <code style="font-family:var(--mono);font-size:.86em">max_length</code> 256,
-        laptop MPS. n=12 is a starting-point sample — published audits use hundreds to thousands of canaries.
-        This is evidence of resistance (or not) to the attacks actually run. It is not a GDPR / AI Act / CNIL determination.
+        <b>Limitations:</b> 1.1B, one epoch, 20,000 rows, <code style="font-family:var(--mono);font-size:.86em">max_length</code> 256,
+        laptop MPS. Thresholds are calibrated on this run's held-out controls. This is evidence of resistance
+        (or not) to the attacks actually run. It is not a GDPR / AI Act / CNIL determination.
       </p>
       <div class="codeblock">
         <div class="cb-head">reproduce</div>
@@ -188,13 +186,30 @@ python examples/alpaca_case_study.py</pre>
       </div>
     </div>
   </section>
+
+  <section>
+    <div class="wrap">
+      <div class="kicker"><span class="no">¶</span><span class="label">Appendix · first look</span></div>
+      <h2>The n=12 run is a first look, <em>not the headline.</em></h2>
+      <p class="prose">
+        Same stack, 5,000 Alpaca rows, README default inclusion coin 0.5 → 12 of 32 candidates inserted,
+        120 held-out. TPR@1%FPR <b>0.500</b> (6/12), CI <b>[0.211, 0.789]</b>, AUC 0.880, regurgitation 0/12.
+        The interval is too wide to sell. Report:
+        <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-case-study-report.json</code>.
+      </p>
+      <p class="prose">
+        Already-measured distilgpt2 n=100/200: TPR <b>0.000</b> [0.000, 0.036], risky-config AUC <b>0.848</b>,
+        regurgitation 0/100. Those CIs are sellable and stay on the landing-page table.
+      </p>
+    </div>
+  </section>
 </main>
 
 <footer>
   <div class="wrap">
     <div class="provenance">
-      <span><b>report</b> examples/alpaca-case-study-report.json</span>
-      <span><b>sha256</b> 9743dad2e7bbd0c25d8306bafe84329b2d4c79136650d7bef1e3bf3a01275ff4</span>
+      <span><b>report</b> examples/alpaca-powered-report.json</span>
+      <span><b>sha256</b> ce1675c6d93943b7affbcb726b76ffbf25244556d5c74af68e2d88e45df3f348</span>
       <span><b>phone-home</b> false</span>
       <span><b>¶</b> evidence, not compliance</span>
       <span><a href="index.html">← back to memaudit</a></span>

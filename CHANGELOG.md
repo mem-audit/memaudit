@@ -12,6 +12,7 @@ First buyer-facing release.
 - `--ref auto` uses `disable_adapter()` on an unmerged LoRA. Full fine-tunes must pass `--ref <base>` or explicit `--ref none` (downgraded headline). No silent fallback.
 - `from memaudit import inject` is the public helper; the implementation module is `memaudit.injection` (no submodule shadowing).
 - Reports are strict JSON (NaN/Inf become null). `phone_home` is always false.
+- Powered flagship case study: TinyLlama-1.1B-Chat + **20,000** Stanford Alpaca rows, LoRA r=8, 1 epoch, **100 / 200** canaries, honest **0.907%** budget. Measured TPR@1%FPR **0.180** (18/100, CI [0.110, 0.269]), AUC 0.776, regurgitation 0/100. Report `examples/alpaca-powered-report.json`. The n=12 first look remains as an appendix.
 - Flagship public case study: TinyLlama-1.1B-Chat + 5,000 Stanford Alpaca rows, LoRA r=8, honest 0.39% canary budget. Script `examples/alpaca_case_study.py`, report `examples/alpaca-case-study-report.json`, write-up `docs/case-study-alpaca.md`. Measured TPR@1%FPR 0.500 (6/12, CI [0.211, 0.789]), AUC 0.880, regurgitation 0/12.
 - `memaudit demo` / `python examples/demo.py`: TinyDemoLM positive-control validation with measured numbers.
 - `memaudit doctor` / `scripts/acceptance.sh`: environment + report schema acceptance.

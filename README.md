@@ -28,25 +28,27 @@ pip install memaudit
 memaudit demo
 ```
 
-[PyPI](https://pypi.org/project/memaudit/) · extras: `"memaudit[peft]"`, `"memaudit[trl]"`, or `"memaudit[peft,trl]"`. From source: `git clone` then `pip install -e ".[dev,peft,trl]"`.
+[PyPI](https://pypi.org/project/memaudit/) Â· extras: `"memaudit[peft]"`, `"memaudit[trl]"`, or `"memaudit[peft,trl]"`. From source: `git clone` then `pip install -e ".[dev,peft,trl]"`.
 
-## Flagship example — TinyLlama + Stanford Alpaca
+## Flagship example â€” TinyLlama + Stanford Alpaca (powered)
 
-This is the public run to click first: a recognizable 1B-class chat model, real Alpaca rows, LoRA r=8, the README 15-line API, honest 0.39% canary budget. Measured 2026-08-27 on Apple M3 Pro (18 GB, MPS). Full write-up: [`docs/case-study-alpaca.md`](docs/case-study-alpaca.md) · [live site](https://ansh200516.github.io/memaudit-site/case-study.html).
+This is the public run to click first: TinyLlama-1.1B-Chat, real Alpaca, LoRA r=8, README API, **100 inserted canaries / 200 controls**, honest **0.907%** canary budget. Measured 2026-08-28 on Apple M3 Pro (18 GB, MPS). Full write-up: [`docs/case-study-alpaca.md`](docs/case-study-alpaca.md) Â· [live site](https://ansh200516.github.io/memaudit-site/).
 
-| Metric | Measured (`examples/alpaca-case-study-report.json`) |
+| Metric | Measured (`examples/alpaca-powered-report.json`) |
 |---|---|
-| Model / data | TinyLlama-1.1B-Chat-v1.0 + 5,000 `tatsu-lab/alpaca` rows |
-| LoRA / epochs / budget | r=8 on `q,k,v,o_proj` · 1 epoch · **0.388%** of tokens |
-| Inserted / held-out | 12 / 120 (`include_prob=0.5` from the 15-line default) |
-| Method | base-calibrated Min-K%++ · `reference.mode=disable_adapter` |
-| **TPR @ 1% FPR** | **0.500** (6/12) · 95% CI **[0.211, 0.789]** · headline valid |
-| AUC (secondary) | **0.880** |
-| Regurgitation | **0/12** (tiers 1 / 4 / 16 all 0) |
-| Negative-control regurgitation | **0.00** (n=120) |
-| Train / audit | 2,205 s / 323 s |
+| Model / data | TinyLlama-1.1B-Chat-v1.0 + **20,000** `tatsu-lab/alpaca` rows |
+| LoRA / epochs / budget | r=8 on `q,k,v,o_proj` Â· 1 epoch Â· **0.907%** of tokens (23,077 / 2,521,431) |
+| Inserted / held-out | **100 / 200** (`include_prob=1.0` so n is not a coin flip) |
+| Method | base-calibrated Min-K%++ Â· `reference.mode=disable_adapter` |
+| **TPR @ 1% FPR** | **0.180** (18/100) Â· 95% CI **[0.110, 0.269]** Â· headline valid |
+| AUC (secondary) | **0.776** |
+| Regurgitation | **0/100** (tiers 1 / 4 / 16) |
+| Negative-control regurgitation | **0.00** (n=200) |
+| Train / audit / wall | load 6 s Â· data 304 s Â· train 10,069 s Â· audit 655 s Â· clock 4 h 43 min (05:11â€“09:54 IST) |
 
-Membership leaked. The model did not spit the secrets back. The CI is wide because n=12 — that is the honest interval, not a missing test. We did not shop a scarier operating point.
+A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed â€” AUC **0.776**. The same run **did not regurgitate**: 0/100 canaries and 0/200 negative controls completed from a prefix.
+
+A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) lives in `examples/alpaca-case-study-report.json` and the case-study appendix â€” not the headline. The already-measured distilgpt2 n=100/200 rows (TPR 0.000 [0, 0.036], risky AUC 0.848) stay in the LoRA benchmark table below.
 
 ```bash
 pip install "memaudit[peft,trl]"
@@ -55,7 +57,7 @@ python examples/alpaca_case_study.py
 
 ## Measured demo (TinyDemoLM validation)
 
-These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 — a positive-control run so the instrument can show a clear hit and a clean control side.
+These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 Â— a positive-control run so the instrument can show a clear hit and a clean control side.
 
 | Metric | Measured value |
 |---|---|
@@ -128,7 +130,7 @@ n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at *
 
 ## TRL SFTTrainer live run (measured)
 
-`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** — same scale as Run A:
+`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** Â— same scale as Run A:
 
 | Metric | SFT live run (1 ep, r=8, lr=2e-4) |
 |---|---|
@@ -303,7 +305,7 @@ Ten landmines encoded in the implementation (source-checked against transformers
 | `unigram` / `bigram` | Least-likely tokens under corpus n-gram counts; uniform-from-vocab if no corpus |
 | `structured` | `CANARY-ID:...` template + random fill (exposure metric later) |
 | `random` | Uniform existing-vocab draws (also used as control twins) |
-| `new_token` | Gated by the PEFT pre-flight — frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
+| `new_token` | Gated by the PEFT pre-flight Â— frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
 
 Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline. Use >=200 / >=200 for a production audit.
 

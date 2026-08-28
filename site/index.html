@@ -72,8 +72,20 @@
   .nav-gh:hover{background:var(--ink);color:var(--paper) !important;border-color:var(--ink) !important}
 
   /* ---------- hero ---------- */
-  .hero{position:relative;padding:84px 0 96px;overflow:hidden}
-  .hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:56px;align-items:center}
+  .hero{position:relative;padding:56px 0 48px;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0;max-width:920px}
+  .hero-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:36px}
+  .hero-num{background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:22px 20px 20px}
+  .hero-num .n{font-family:var(--mono);font-weight:600;font-size:clamp(32px,4.4vw,48px);letter-spacing:-.03em;line-height:1}
+  .hero-num .n small{font-size:.42em;color:var(--ink-soft);font-weight:500;letter-spacing:0}
+  .hero-num .lab{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:12px}
+  .hero-num .sub{font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:6px;letter-spacing:.01em}
+  .hero-scale{font-family:var(--mono);font-size:12px;line-height:1.65;color:var(--ink-soft);margin-top:16px;max-width:78ch}
+  .how{margin-top:44px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .how article{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:20px 22px}
+  .how h3{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .how p{font-size:16px;color:var(--ink-soft);line-height:1.55}
+  .how p b{color:var(--ink);font-weight:600}
   .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px}
   .eyebrow::before{content:"";display:inline-block;width:26px;height:1px;background:var(--accent)}
   h1{
@@ -320,7 +332,9 @@
 
   /* responsive */
   @media (max-width:980px){
-    .hero-grid{grid-template-columns:1fr;gap:44px}
+    .hero-grid{grid-template-columns:1fr;gap:0}
+    .hero-nums{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .how{grid-template-columns:1fr}
     .verdicts{grid-template-columns:1fr}
     .qs-grid{grid-template-columns:1fr}
     .preflight-grid{grid-template-columns:1fr;gap:30px}
@@ -334,6 +348,7 @@
   }
   @media (max-width:560px){
     .metric-row{grid-template-columns:1fr}
+    .hero-nums{grid-template-columns:1fr}
     .stamp-hero{display:none}
   }
 </style>
@@ -349,14 +364,9 @@
       <span class="ref">v0.1 · audit doc</span>
     </a>
     <nav class="docnav" aria-label="Sections">
+      <a href="#evidence">Numbers</a>
       <a href="case-study.html">Case study</a>
-      <a href="#verdicts">Verdicts</a>
       <a href="#quickstart">Quickstart</a>
-      <a href="#preflight">Pre-flight</a>
-      <a href="#evidence">Evidence</a>
-      <a href="#compliance">Compliance</a>
-      <a href="#landscape">Landscape</a>
-      <a href="#faq">FAQ</a>
       <a href="https://pypi.org/project/memaudit/">PyPI ↗</a>
       <a class="nav-gh" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
     </nav>
@@ -370,62 +380,116 @@
     <div class="wrap hero-grid">
       <div style="position:relative">
         <div class="stamp stamp-hero fade d5">Evidence ·<br>not compliance</div>
-        <p class="eyebrow fade d1">memaudit — training-data memorization auditor for fine-tuned LLMs</p>
+        <p class="eyebrow fade d1">memaudit — training-data memorization auditor</p>
         <h1 class="fade d2"><span class="mono-key">pytest</span> for<br>training-data <em>privacy.</em></h1>
         <p class="lede fade d3">
-          Plant pre-registered canaries in your fine-tuning data. Train as usual.
-          memaudit reports — <strong>with confidence intervals</strong> — whether the trained model
-          leaks membership or regurgitates training text. Two verdicts, one versioned JSON report,
-          negative controls always. Runs entirely where you train.
+          A local plugin that plants canaries in your fine-tune and reports whether the finished
+          model <strong>leaks membership</strong> or <strong>regurgitates training text</strong>.
         </p>
-        <div class="cta-row fade d4">
+        <div class="hero-nums fade d4" id="poweredHero">
+          <div class="hero-num">
+            <div class="n">0.180<small> 18/100</small></div>
+            <div class="lab">Leak rate at 1% FPR</div>
+            <div class="sub">95% CI [0.110, 0.269]</div>
+          </div>
+          <div class="hero-num">
+            <div class="n">0.776</div>
+            <div class="lab">Member / control rank</div>
+            <div class="sub">AUC, secondary</div>
+          </div>
+          <div class="hero-num">
+            <div class="n">0/100</div>
+            <div class="lab">Secrets spat back</div>
+            <div class="sub">Regurgitation rate</div>
+          </div>
+        </div>
+        <p class="hero-scale fade d4">
+          TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.907%
+          · 20,000 host rows · Apple M3 Pro / MPS · 2026-08-28
+        </p>
+        <div class="cta-row fade d5">
           <button class="pipline" data-copy="pip install memaudit" aria-label="Copy pip install command">
             <span class="dollar">$</span> pip install memaudit <span class="copy-state" aria-hidden="true">⧉</span>
           </button>
-          <a class="btn btn-primary" href="case-study.html">Flagship case study</a>
-          <a class="btn btn-ghost" href="#quickstart">Read the quickstart</a>
+          <a class="btn btn-primary" href="https://github.com/mem-audit/memaudit">GitHub ↗</a>
+          <a class="btn btn-ghost" href="case-study.html">Case study</a>
         </div>
-        <div class="factstrip fade d5">
-          <span><b>◆</b> <a href="https://pypi.org/project/memaudit/">PyPI 0.1.0</a></span>
-          <span><b>◆</b> Apache-2.0</span>
-          <span><b>◆</b> Fully local · no phone-home</span>
-          <span><b>◆</b> LoRA / PEFT-aware</span>
-          <span><b>◆</b> EDPB 28/2024-shaped report</span>
-        </div>
-      </div>
-      <div class="fade d3">
-        <div class="term" aria-label="Terminal demo of memaudit">
-          <div class="term-head">
-            <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
-            <span class="term-title">measured demo · examples/demo.py</span>
-          </div>
-          <div class="term-body" id="heroTerm"></div>
+        <div class="how fade d5">
+          <article>
+            <h3>Membership</h3>
+            <p><b>Can logprobs reveal a training row?</b> TPR at 1% FPR, thresholded on held-out controls, with a Clopper–Pearson interval. High with a tight CI means leakage. Zero with a tight CI means this LoRA did not leak at that operating point.</p>
+          </article>
+          <article>
+            <h3>Regurgitation</h3>
+            <p><b>Does the model emit the secret from a prefix?</b> A separate attack. Membership and regurgitation routinely disagree — a regurgitation-only test can file a leaky model as clean.</p>
+          </article>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ FLAGSHIP ============ -->
-  <section class="flagship" id="flagship">
-    <div class="wrap docket">
-      <div>
-        <div class="tag">Flagship · TinyLlama + Stanford Alpaca · 2026-08-27</div>
-        <h2>The run people click <em>before the docs.</em></h2>
-        <p>
-          TinyLlama-1.1B-Chat, 5,000 real Alpaca rows, LoRA r=8, one epoch, honest 0.39% canary budget,
-          README 15-line API. Membership leaked. The model did not emit the secrets.
-          CI is wide because n=12 — that is the honest interval.
-        </p>
-        <div class="cta-row" style="margin-top:0">
-          <a class="btn btn-primary" href="case-study.html">Read the case study</a>
-          <a class="btn btn-ghost" href="https://github.com/mem-audit/memaudit/blob/main/docs/case-study-alpaca.md">Repo write-up ↗</a>
+  <!-- ============ COMPACT TABLE ============ -->
+  <section class="flagship" id="evidence" style="padding:40px 0 56px">
+    <div class="wrap">
+      <div class="bench-block">
+        <div class="bench-head">
+          <span class="bench-tag">Measured · n=100 / 200</span>
+          <span class="bench-scale">Honest ≤1% canary budget · Apple MPS · 2026-08-27/28</span>
         </div>
-      </div>
-      <div class="docket-nums">
-        <div><div class="n">0.500</div><div class="l">TPR @ 1% FPR · 6/12 · CI [0.211, 0.789]</div></div>
-        <div><div class="n">0.880</div><div class="l">AUC (secondary)</div></div>
-        <div><div class="n">0/12</div><div class="l">Regurgitation · all tiers</div></div>
-        <div><div class="n">0.00</div><div class="l">Neg-control regurg · n=120</div></div>
+        <div class="tablewrap">
+          <table class="benchtbl">
+            <thead>
+              <tr>
+                <th>Stack</th>
+                <th>Config</th>
+                <th>n / controls</th>
+                <th>Budget</th>
+                <th>TPR @ 1% FPR</th>
+                <th>95% CI</th>
+                <th>AUC</th>
+                <th>Regurg</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>TinyLlama + Alpaca</td>
+                <td>HF Trainer · LoRA r=8 · 1&nbsp;ep · 20k rows</td>
+                <td class="mono"><b>100 / 200</b></td>
+                <td class="mono">0.907%</td>
+                <td class="mono"><b>0.180</b> (18/100)</td>
+                <td class="mono">[0.110, 0.269]</td>
+                <td class="mono">0.776</td>
+                <td class="mono">0/100</td>
+              </tr>
+              <tr>
+                <td>distilgpt2 LoRA</td>
+                <td>HF Trainer · 1&nbsp;ep · r=8 · host 80k</td>
+                <td class="mono">100 / 200</td>
+                <td class="mono">0.77%</td>
+                <td class="mono"><b>0.000</b></td>
+                <td class="mono">[0.000, 0.036]</td>
+                <td class="mono">0.586</td>
+                <td class="mono">0/100</td>
+              </tr>
+              <tr class="risky">
+                <td>distilgpt2 · risky</td>
+                <td>HF Trainer · 5&nbsp;ep · r=16 · lr&nbsp;1e-3</td>
+                <td class="mono">100 / 200</td>
+                <td class="mono">0.77%</td>
+                <td class="mono"><b>0.000</b></td>
+                <td class="mono">[0.000, 0.036]</td>
+                <td class="mono"><b>0.848</b></td>
+                <td class="mono">0/100</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="bench-note">
+          Reproduce the TinyLlama flagship: <code style="font-family:var(--mono);font-size:.85em">python examples/alpaca_case_study.py</code>.
+          Write-up: <a href="case-study.html">case-study.html</a>.
+          distilgpt2 rows are the already-measured n=100/200 benches — tight CIs, not hidden.
+          A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) is in the case-study appendix; it is not the headline.
+        </p>
       </div>
     </div>
   </section>
@@ -567,16 +631,15 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
     </div>
   </section>
 
-  <!-- ============ ¶04 EVIDENCE / MEASURED NUMBERS ============ -->
-  <section id="evidence">
+  <!-- ============ ¶04 MORE MEASURED SURFACES ============ -->
+  <section id="more-evidence">
     <div class="wrap">
-      <div class="kicker reveal"><span class="no">¶ 04</span><span class="label">Measured numbers</span></div>
-      <h2 class="reveal">Measured validation, <em>labeled at scale.</em></h2>
+      <div class="kicker reveal"><span class="no">¶ 04</span><span class="label">Other measured surfaces</span></div>
+      <h2 class="reveal">The instrument check, <em>and the smaller LM.</em></h2>
       <p class="section-lede reveal">
-        Three measured surfaces you can reproduce today: the <a href="case-study.html">TinyLlama + Alpaca flagship</a>
-        (membership leaked, regurgitation did not), a TinyDemoLM positive-control that proves the
-        instrument detects and stays silent on controls, then pretrained <b>distilgpt2 + LoRA</b> at an honest
-        ≤1% canary budget. Every number carries its scale label.
+        The hero numbers are the powered TinyLlama + Alpaca run (100 / 200). Below: a TinyDemoLM
+        positive-control that proves the pipeline can detect, then the same distilgpt2 n=100/200
+        rows from the compact table with their stability seeds.
       </p>
 
       <div class="demo-panel reveal">
@@ -611,50 +674,6 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
           <b>Scale:</b> TinyDemoLM positive control — canaries deliberately dominate tokens so the pipeline can show
           a clear hit and a clean control side. If a model doesn't memorize, memaudit refuses the TPR@1%FPR headline
           rather than inventing one.
-        </p>
-      </div>
-
-      <!-- FLAGSHIP: TinyLlama + Alpaca, measured 2026-08-27 -->
-      <div class="bench-block reveal">
-        <div class="bench-head">
-          <span class="bench-tag">Flagship · TinyLlama + Alpaca</span>
-          <span class="bench-scale">TinyLlama-1.1B-Chat · 5,000 tatsu-lab/alpaca · Apple M3 Pro / MPS · 2026-08-27 · budget 0.388%</span>
-        </div>
-        <div class="tablewrap">
-          <table class="benchtbl">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Config</th>
-                <th>n / controls</th>
-                <th>Budget</th>
-                <th>TPR @ 1% FPR</th>
-                <th>95% CI</th>
-                <th>AUC</th>
-                <th>Regurg</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Flagship</td>
-                <td>HF Trainer · LoRA r=8 · 1&nbsp;ep · lr&nbsp;2e-4</td>
-                <td class="mono">12 / 120</td>
-                <td class="mono">0.388%</td>
-                <td class="mono"><b>0.500</b> (6/12)</td>
-                <td class="mono">[0.211, 0.789]</td>
-                <td class="mono"><b>0.880</b></td>
-                <td class="mono">0/12</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="bench-note">
-          <b>Scale:</b> pretrained TinyLlama-1.1B-Chat + LoRA on 5,000 real Alpaca rows at an honest canary budget.
-          Membership leaked; regurgitation did not. CI is wide because the README default inclusion coin inserted 12 of 32 candidates.
-          Reproduce: <code style="font-family:var(--mono);font-size:.85em">python examples/alpaca_case_study.py</code>.
-          Write-up: <a href="case-study.html">case-study.html</a> ·
-          <a href="https://github.com/mem-audit/memaudit/blob/main/docs/case-study-alpaca.md">docs/case-study-alpaca.md</a>.
-          Train 2,205&nbsp;s / audit 323&nbsp;s.
         </p>
       </div>
 
@@ -937,13 +956,12 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
         </details>
         <details class="reveal">
           <summary>What scale was tested?</summary>
-          <div class="faq-a">Three measured surfaces ship with the repo: (0) the <a href="case-study.html">flagship
-          TinyLlama + Alpaca</a> LoRA run (TPR@1%FPR 0.500, regurgitation 0/12, budget 0.388%); (1) a <b>TinyDemoLM</b>
-          positive-control demo (<code>memaudit demo</code>) that proves detection and clean controls on a laptop;
-          (2) pretrained <b>distilgpt2 + LoRA</b> at an honest ≤1% canary budget, including a live
-          <code>trl.SFTTrainer</code> path and n=100 / 200-control runs — see ¶&nbsp;04 and
-          <code>benchmarks/README.md</code>. Production audits run locally against <i>your</i> model and data;
-          every report carries its own scale and provenance fields.</div>
+          <div class="faq-a">The flagship is TinyLlama-1.1B-Chat + Alpaca LoRA, <b>100 inserted / 200 controls</b>,
+          20,000 host rows, 0.907% canary budget — see the hero and <a href="case-study.html">case study</a>.
+          Also shipped: a TinyDemoLM positive-control (<code>memaudit demo</code>) and pretrained
+          <b>distilgpt2 + LoRA</b> n=100/200 (TPR 0.000, CI [0, 0.036]; risky-config AUC 0.848).
+          A 12-canary first look exists as an appendix only. Production audits run against <i>your</i> model
+          and data; every report carries its own scale and provenance fields.</div>
         </details>
       </div>
     </div>
@@ -1016,42 +1034,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
   "use strict";
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---- hero terminal: replay of the real measured demo ---- */
-  var lines = [
-    {c:"t-cmd",  t:"pip install memaudit"},
-    {c:"t-cmd",  t:"memaudit demo"},
-    {c:"t-dim",  t:"  train       TinyDemoLM (hidden=64, vocab=256) · 7.0 s · loss 0.126"},
-    {c:"t-dim",  t:"  pre-flight  placement OK · coins recorded · 16 inserted / 100 controls"},
-    {c:"t-dim",  t:"  audit       base-calibrated Min-K%++ · secret-span · 20.3 s"},
-    {c:"t-rule", t:"  ─────────────────────────────────────────────────"},
-    {c:"t-verdict", h:"  membership     TPR@1%FPR <span class='t-val'>1.000</span>   CI95 <span class='t-val'>[0.794, 1.000]</span>"},
-    {c:"t-verdict", h:"  regurgitation  <span class='t-val'>15/16</span> at 16×      controls <span class='t-ok'>0/100</span>"},
-    {c:"t-dim",  t:"  report      memaudit-report.json · schema 1.0.0 · seed 0"},
-    {c:"t-note", t:"  # scale: TinyDemoLM positive control · distilgpt2 LoRA rows in ¶04"}
-  ];
-  var term = document.getElementById("heroTerm");
-  function renderLine(l){
-    var el = document.createElement("span");
-    el.className = "t-line " + l.c;
-    if (l.h) { el.innerHTML = l.h; } else { el.textContent = l.t; }
-    return el;
-  }
-  if (reduced) {
-    lines.forEach(function(l){ term.appendChild(renderLine(l)); });
-  } else {
-    var cursor = document.createElement("span");
-    cursor.className = "cursor";
-    term.appendChild(cursor);
-    var i = 0;
-    function next(){
-      if (i >= lines.length) return;
-      term.insertBefore(renderLine(lines[i]), cursor);
-      i++;
-      var delay = i <= 2 ? 520 : (lines[i-1] && lines[i-1].c === "t-rule" ? 200 : 340);
-      setTimeout(next, delay);
-    }
-    setTimeout(next, 650);
-  }
+  /* hero terminal removed: first screen is the powered n=100 numbers */
 
   /* ---- scroll reveal with per-section stagger ---- */
   var revealed = document.querySelectorAll(".reveal");

@@ -28,10 +28,12 @@ benchmarks/benchlog.txt
 !examples/demo-report.json
 !examples/memaudit-manifest.json
 !examples/alpaca-case-study-report.json
+!examples/alpaca-powered-report.json
 !hf/space/demo-report.json
 
 # Local training junk from the flagship case study (do not commit weights)
 examples/out-alpaca-case-study/
+examples/out-alpaca-powered/
 
 # Private research/ops (kept outside this repo under memaudit-private/)
 literature-review/

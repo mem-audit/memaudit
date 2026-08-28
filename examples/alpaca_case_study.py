@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Flagship public case study: TinyLlama + Stanford Alpaca + memaudit.
 
-Wires memaudit exactly as the README 15-line snippet, on a small recognizable
-base (TinyLlama-1.1B-Chat, else Qwen2.5-1.5B-Instruct) and real
-``tatsu-lab/alpaca`` rows. Canary budget is kept in the honest LoRA-benchmark
-band (~0.1–1% of tokens). Does not commit model weights.
+Wires memaudit as the README API (generate_canaries + inject + callback) on
+TinyLlama-1.1B-Chat (else Qwen2.5-1.5B-Instruct) and real ``tatsu-lab/alpaca``
+rows. Defaults are the powered sellable setup: >=100 inserted canaries,
+>=200 held-out controls, include_prob=1.0 so the sample size is not a coin
+flip, host grown until canary tokens stay <= ~1% of train tokens.
 
     python examples/alpaca_case_study.py
-    # or, after  pip install "memaudit[peft,trl]"
+    # first-look (n=12 inserted, wide CI — not the headline):
+    python examples/alpaca_case_study.py --n 32 --n-controls 100 --n-host 5000 \\
+        --include-prob 0.5 --min-inserted 1 \\
+        --report-path examples/alpaca-case-study-report.json \\
+        --output-dir examples/out-alpaca-case-study
 """
 
 from __future__ import annotations
@@ -46,7 +51,9 @@ PREFERRED_MODEL = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 FALLBACK_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 ALPACA_DS = "tatsu-lab/alpaca"
 LLAMA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj"]
-DEFAULT_N_HOST = 5000
+DEFAULT_N_HOST = 20_000
+ALPACA_N_FULL = 52_002
+CANARY_BUDGET_CAP = 0.01
 
 
 def _device() -> str:
@@ -147,16 +154,18 @@ def _token_budget(host: list[dict], manifest: dict, tokenizer) -> dict:
         if not c.get("included"):
             continue
         canary_tok += max(len(c.get("secret_token_ids") or []), 1) * max(int(c.get("repetitions") or 1), 1)
-    sample = host[: min(64, len(host))]
-    lens = [len(tokenizer.encode(r["text"], add_special_tokens=False)) for r in sample]
-    mean = sum(lens) / max(len(lens), 1)
-    host_tok = int(mean * len(host))
+    # Alpaca is small enough to count host tokens exactly (buyer-facing %).
+    lens = [len(tokenizer.encode(r["text"], add_special_tokens=False)) for r in host]
+    host_tok = int(sum(lens))
+    mean = host_tok / max(len(lens), 1)
     frac = canary_tok / max(host_tok + canary_tok, 1)
     return {
         "canary_tokens": canary_tok,
         "host_tokens_est": host_tok,
+        "host_tokens": host_tok,
         "mean_host_tokens": round(mean, 2),
         "frac": frac,
+        "exact": True,
     }
 
 
@@ -175,7 +184,10 @@ def _print_summary(report: dict) -> None:
     print(f"LoRA / epochs:    r={cs.get('lora_r')}  epochs={cs.get('epochs')}")
     print(f"canaries:         inserted={cs.get('n_inserted')}  controls={cs.get('n_controls')}  family={cs.get('family')}")
     print(f"reps / budget:    {cs.get('repetitions')}  {cs.get('token_budget', {}).get('frac')}")
-    print(f"device / clock:   {cs.get('device')}  train={cs.get('train_seconds')}s  audit={report.get('audit_seconds')}s")
+    print(
+        f"device / clock:   {cs.get('device')}  train={cs.get('train_seconds')}s  "
+        f"audit={report.get('audit_seconds')}s  wall={cs.get('wall_seconds')}s"
+    )
     print(f"method:           {mem.get('headline_attack')}")
     print(f"reference.mode:   {(report.get('reference') or {}).get('mode')}")
     if valid and tpr is not None:
@@ -202,15 +214,27 @@ def _print_summary(report: dict) -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Flagship TinyLlama + Alpaca memaudit case study")
-    p.add_argument("--output-dir", default=str(_ROOT / "examples" / "out-alpaca-case-study"))
+    p.add_argument("--output-dir", default=str(_ROOT / "examples" / "out-alpaca-powered"))
     p.add_argument(
         "--report-path",
-        default=str(_ROOT / "examples" / "alpaca-case-study-report.json"),
+        default=str(_ROOT / "examples" / "alpaca-powered-report.json"),
         help="Committed-size report JSON (no weights).",
     )
     p.add_argument("--n-host", type=int, default=DEFAULT_N_HOST)
-    p.add_argument("--n", type=int, default=32)
-    p.add_argument("--n-controls", type=int, default=100)
+    p.add_argument("--n", type=int, default=100)
+    p.add_argument("--n-controls", type=int, default=200)
+    p.add_argument(
+        "--include-prob",
+        type=float,
+        default=1.0,
+        help="inject() inclusion coin. Powered default 1.0 guarantees n inserted.",
+    )
+    p.add_argument(
+        "--min-inserted",
+        type=int,
+        default=100,
+        help="Abort if fewer canaries land in the train set (powered floor).",
+    )
     p.add_argument("--epochs", type=float, default=1.0)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--lora-r", type=int, default=8)
@@ -221,11 +245,13 @@ def main() -> int:
     p.add_argument("--release-context", default="open-weights")
     ns = p.parse_args()
 
+    wall0 = time.perf_counter()
+    wall_started = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     out = Path(ns.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     device = _device()
     hw = _hardware()
-    print(f"device={device} hardware={hw}", flush=True)
+    print(f"wall_start={wall_started} device={device} hardware={hw}", flush=True)
 
     t_load = time.perf_counter()
     model, tokenizer, model_name, fallback_note = _try_preferred_then_qwen(device)
@@ -237,9 +263,8 @@ def main() -> int:
     data_s = time.perf_counter() - t_data
     print(f"alpaca host={len(host)} in {data_s:.1f}s", flush=True)
 
-    # README 15-line usage (high_ppl, reps {1,4,16}, n_controls=100).
-    # model= is omitted on purpose: the public snippet does not pass it;
-    # high_ppl then uses the documented rare-token unigram fallback.
+    # README API: generate_canaries + inject + callback. model= omitted on
+    # purpose so high_ppl uses the documented rare-token unigram fallback.
     canaries = generate_canaries(
         tokenizer,
         n=ns.n,
@@ -248,19 +273,48 @@ def main() -> int:
         repetitions=(1, 4, 16),
         seed=ns.seed,
     )
-    ds, manifest = inject(host, canaries, fmt="auto", seed=ns.seed, tokenizer=tokenizer)
-    budget = _token_budget(list(ds), manifest, tokenizer)
+    ds, manifest = inject(
+        host,
+        canaries,
+        fmt="auto",
+        seed=ns.seed,
+        tokenizer=tokenizer,
+        include_prob=ns.include_prob,
+    )
+    print("counting host tokens (exact)…", flush=True)
+    budget = _token_budget(host, manifest, tokenizer)
+    print(
+        f"budget draft host={len(host)} canary_tok={budget['canary_tokens']} "
+        f"host_tok={budget['host_tokens']} frac={budget['frac']:.4%}",
+        flush=True,
+    )
 
     # grow with more real alpaca rows if the canary budget exceeds 1%
-    extra_need = ns.n_host
+    extra_need = len(host)
     guard = 0
-    while budget["frac"] > 0.01 and guard < 6:
-        extra_need = extra_need + ns.n_host
+    while budget["frac"] > CANARY_BUDGET_CAP and extra_need < ALPACA_N_FULL and guard < 8:
+        need_tok = int(budget["canary_tokens"] * (1.0 / CANARY_BUDGET_CAP - 1.0) * 1.05)
+        mean = max(float(budget["mean_host_tokens"]), 1.0)
+        extra_need = min(ALPACA_N_FULL, max(extra_need + 1, int(need_tok / mean) + 1))
         host = _alpaca_rows(extra_need, ns.seed)
-        ds, manifest = inject(host, canaries, fmt="auto", seed=ns.seed, tokenizer=tokenizer)
-        budget = _token_budget(list(ds), manifest, tokenizer)
+        ds, manifest = inject(
+            host,
+            canaries,
+            fmt="auto",
+            seed=ns.seed,
+            tokenizer=tokenizer,
+            include_prob=ns.include_prob,
+        )
+        budget = _token_budget(host, manifest, tokenizer)
         guard += 1
         print(f"budget high; grew host to {len(host)}  frac={budget['frac']:.4%}", flush=True)
+
+    if int(manifest["n_inserted_canaries"]) < int(ns.min_inserted):
+        raise SystemExit(
+            f"inserted {manifest['n_inserted_canaries']} canaries "
+            f"< --min-inserted {ns.min_inserted}. "
+            "Pass --include-prob 1.0 and a larger --n."
+        )
 
     write_json(out / "memaudit-manifest.json", manifest)
     print(
@@ -357,12 +411,13 @@ def main() -> int:
     if report is None:
         raise SystemExit("callback did not write a report")
 
+    wall_s = time.perf_counter() - wall0
     report["case_study"] = {
-        "title": "TinyLlama + Stanford Alpaca LoRA fine-tune",
+        "title": "TinyLlama + Stanford Alpaca LoRA fine-tune (powered)",
         "scale": (
             f"{model_name} + LoRA r={ns.lora_r} on {','.join(LLAMA_TARGETS)}, "
             f"device={device}, {len(host)} real tatsu-lab/alpaca rows, "
-            f"canary budget {budget['frac']:.3%} of tokens, 1-epoch LoRA."
+            f"canary budget {budget['frac']:.3%} of tokens, {ns.epochs:g}-epoch LoRA."
         ),
         "model": model_name,
         "model_fallback_note": fallback_note,
@@ -389,6 +444,8 @@ def main() -> int:
         "train_seconds": round(train_s, 3),
         "load_seconds": round(load_s, 3),
         "data_seconds": round(data_s, 3),
+        "wall_seconds": round(wall_s, 3),
+        "wall_started_at": wall_started,
         "train_loss": train_loss,
         "ref": "auto",
         "seed": ns.seed,
@@ -441,9 +498,11 @@ def main() -> int:
                 "neg_regurg": report["negative_controls"]["regurgitation_rate"],
                 "audit_s": report.get("audit_seconds"),
                 "train_s": train_s,
+                "wall_s": wall_s,
                 "budget": budget["frac"],
                 "n_host": len(host),
                 "n_inserted": manifest["n_inserted_canaries"],
+                "include_prob": ns.include_prob,
                 "model": model_name,
                 "device": device,
                 "report": str(dest),

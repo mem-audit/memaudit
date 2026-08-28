@@ -11,7 +11,7 @@ Single self-contained `index.html` (inline CSS/JS, no build step). Only external
 
 - **URL:** https://ansh200516.github.io/memaudit-site/
 - **Hosted on:** GitHub Pages, from the standalone public repo [`ansh200516/memaudit-site`](https://github.com/ansh200516/memaudit-site) — branch `main`, path `/` (plain branch-based Pages; no Actions workflow needed since `index.html` sits at the repo root). The repo lives under the personal account for now and can later transfer to the product org [`mem-audit`](https://github.com/mem-audit) (Pages URL then becomes `https://mem-audit.github.io/memaudit-site/`). The Actions-based setup described above still applies to the eventual main product repo.
-- **Deployed & verified:** 2026-08-28 — HTTP 200, served HTML byte-identical to `site/index.html`.
+- **Deployed & verified:** 2026-08-28 — hero is the powered TinyLlama n=100/200 run (TPR 0.180, CI [0.110, 0.269]); HTTP 200 after Pages rebuild.
 - **Redeploy after editing `site/index.html`** (from the main repo root):
 
   ```sh
