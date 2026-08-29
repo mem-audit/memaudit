@@ -27,6 +27,7 @@ from memaudit.constants import (
     MIN_CONTROLS_FOR_TPR_AT_1PCT,
     MIN_SECRET_LEN,
     NEW_TOKEN_MESSAGE,
+    get_audit_profile,
 )
 from memaudit.exceptions import MemauditConfigError
 from memaudit.types import Canary
@@ -45,16 +46,37 @@ def normalize_family(family: str) -> str:
     return FAMILY_ALIASES.get(key, key)
 
 
+def requested_family_of(canary: Any) -> str:
+    if isinstance(canary, Canary):
+        return canary.requested_family or canary.family
+    requested = canary.get("requested_family") if isinstance(canary, dict) else None
+    return str(requested or (canary.get("family") if isinstance(canary, dict) else "") or "")
+
+
+def actual_generator_of(canary: Any) -> str:
+    if isinstance(canary, Canary):
+        return canary.actual_generator or str((canary.metadata or {}).get("source") or "")
+    if not isinstance(canary, dict):
+        return ""
+    if canary.get("actual_generator"):
+        return str(canary["actual_generator"])
+    meta = canary.get("metadata") or {}
+    if isinstance(meta, dict) and meta.get("source"):
+        return str(meta["source"])
+    return ""
+
+
 def generate_canaries(
     tokenizer: Any,
-    n: int = DEFAULT_N,
-    n_controls: int = DEFAULT_N_CONTROLS,
+    n: int | None = None,
+    n_controls: int | None = None,
     family: str = DEFAULT_FAMILY,
-    repetitions: Sequence[int] = DEFAULT_REPETITIONS,
+    repetitions: Sequence[int] | None = None,
     seed: int = 0,
     *,
+    profile: str | None = None,
     model: Any | None = None,
-    secret_len: int = DEFAULT_SECRET_LEN,
+    secret_len: int | None = None,
     corpus: Sequence[str] | None = None,
     ppl_band: tuple[float, float] = (40.0, 500.0),
     sample_temperature: float = 1.8,
@@ -72,13 +94,43 @@ def generate_canaries(
     family
         ``high_ppl`` (default), ``unigram``, ``bigram``, ``structured``, ``random``.
         ``new_token`` raises - gated / unimplemented in v0.1.
+    profile
+        Optional named audit profile (``smoke`` / ``routine`` / ``powered``).
+        Fills n, n_controls, repetitions, and secret_len when those arguments
+        are omitted. Explicit counts always win.
     model
-        Optional causal LM used only by ``high_ppl`` rejection sampling. If omitted,
-        ``high_ppl`` falls back to rare-token unigram construction from the vocab
-        (recorded in ``generation_notes``).
+        Optional causal LM used only by ``high_ppl`` rejection sampling. If omitted
+        and a corpus is supplied, ``high_ppl`` falls back to rare-token unigram
+        draws; if omitted and there is no corpus, the draw is uniform-from-vocab
+        (recorded as ``actual_generator`` / ``metadata.source``, not as
+        model-scored high-perplexity).
     corpus
         Optional raw strings for unigram/bigram frequency tables.
     """
+    profile_spec = None
+    if profile:
+        try:
+            profile_spec = get_audit_profile(profile)
+        except KeyError as exc:
+            raise MemauditConfigError(
+                f"Unknown audit profile {profile!r}. "
+                "Use smoke, routine, or powered."
+            ) from exc
+        if n is None:
+            n = int(profile_spec["n"])
+        if n_controls is None:
+            n_controls = int(profile_spec["n_controls"])
+        if repetitions is None:
+            repetitions = tuple(profile_spec["repetitions"])
+        if secret_len is None:
+            secret_len = int(profile_spec["secret_len"])
+    n = DEFAULT_N if n is None else int(n)
+    n_controls = DEFAULT_N_CONTROLS if n_controls is None else int(n_controls)
+    if repetitions is None:
+        repetitions = DEFAULT_REPETITIONS
+    if secret_len is None:
+        secret_len = DEFAULT_SECRET_LEN
+
     family_norm = normalize_family(family)
     if family_norm == "new_token":
         raise MemauditConfigError(NEW_TOKEN_MESSAGE)
@@ -90,7 +142,9 @@ def generate_canaries(
         raise MemauditConfigError("n and n_controls must be >= 0")
     if n + n_controls == 0:
         raise MemauditConfigError("need at least one canary or control")
-    if n_controls < MIN_CONTROLS_FOR_TPR_AT_1PCT:
+    if n_controls < MIN_CONTROLS_FOR_TPR_AT_1PCT and not (
+        profile_spec and profile_spec.get("refuse_headline")
+    ):
         warnings.warn(
             f"n_controls={n_controls} is below the {MIN_CONTROLS_FOR_TPR_AT_1PCT} "
             "floor required to identify TPR@1% FPR. The report will refuse that "
@@ -115,10 +169,17 @@ def generate_canaries(
 
     fallback_note = None
     if family_norm == "high_ppl" and model is None:
-        fallback_note = (
-            "high_ppl: no model provided; fell back to rare-token unigram construction "
-            "from the tokenizer vocabulary (existing tokens only; no vocab resize)"
-        )
+        if freq is None:
+            fallback_note = (
+                "high_ppl: no model provided; fell back to uniform-from-vocab "
+                "draws from the tokenizer vocabulary (no corpus frequencies; "
+                "this is not rare-token unigram). Existing tokens only; no vocab resize"
+            )
+        else:
+            fallback_note = (
+                "high_ppl: no model provided; fell back to rare-token unigram "
+                "construction from the supplied corpus (existing tokens only; no vocab resize)"
+            )
     if family_norm in {"unigram", "bigram"} and freq is None:
         extra = (
             f"{family_norm}: no corpus provided; sampling uniformly from non-special vocab"
@@ -155,6 +216,9 @@ def generate_canaries(
         prefix_ids = ids[:half]
         prefix = decode_ids(tokenizer, prefix_ids, skip_special_tokens=True)
         seen.append(set(ids))
+        meta = dict(meta or {})
+        if profile:
+            meta["audit_profile"] = profile_spec["name"] if profile_spec else profile
         canaries.append(
             Canary(
                 id=f"c-{family_norm}-{i:04d}",
@@ -168,6 +232,8 @@ def generate_canaries(
                 role=role,
                 generation_notes=notes,
                 metadata=meta,
+                requested_family=family_norm,
+                actual_generator=str(meta.get("source") or family_norm),
             )
         )
     return canaries

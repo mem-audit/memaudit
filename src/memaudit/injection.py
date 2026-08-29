@@ -242,6 +242,13 @@ def inject(
         "canaries": entries,
         "warnings": warnings,
     }
+    stamped = {
+        (c.metadata or {}).get("audit_profile")
+        for c in parsed
+        if isinstance(c.metadata, dict) and c.metadata.get("audit_profile")
+    }
+    if len(stamped) == 1:
+        manifest["audit_profile"] = next(iter(stamped))
     manifest["manifest_hash"] = sha256_json(
         {k: v for k, v in manifest.items() if k != "manifest_hash"}
     )

@@ -264,7 +264,7 @@ def main() -> int:
     print(f"alpaca host={len(host)} in {data_s:.1f}s", flush=True)
 
     # README API: generate_canaries + inject + callback. model= omitted on
-    # purpose so high_ppl uses the documented rare-token unigram fallback.
+    # purpose so high_ppl uses the uniform_vocab fallback (no corpus either).
     canaries = generate_canaries(
         tokenizer,
         n=ns.n,
@@ -272,6 +272,7 @@ def main() -> int:
         family="high_ppl",
         repetitions=(1, 4, 16),
         seed=ns.seed,
+        profile="powered",
     )
     ds, manifest = inject(
         host,
@@ -398,6 +399,7 @@ def main() -> int:
         ref="auto",
         skip_generation=False,
         release_context=ns.release_context,
+        profile="powered",
     )
     trainer.add_callback(cb)
 

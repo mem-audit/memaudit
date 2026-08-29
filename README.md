@@ -41,12 +41,13 @@ This is the public run to click first: TinyLlama-1.1B-Chat, real Alpaca, LoRA r=
 | Inserted / held-out | **100 / 200** (`include_prob=1.0` so n is not a coin flip) |
 | Method | base-calibrated Min-K%++ · `reference.mode=disable_adapter` |
 | **TPR @ 1% FPR** | **0.180** (18/100) · 95% CI **[0.110, 0.269]** · headline valid |
+| Repetition-tier curve (same threshold) | **1x 0/34** · **4x 2/33** · **16x 16/33** |
 | AUC (secondary) | **0.776** |
-| Regurgitation | **0/100** (tiers 1 / 4 / 16) |
+| Regurgitation | **0/100** under this prefix/decoding/exact-match protocol |
 | Negative-control regurgitation | **0.00** (n=200) |
 | Train / audit / wall | load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h 43 min (05:11–09:54 IST) |
 
-A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed — AUC **0.776**. The same run **did not regurgitate**: 0/100 canaries and 0/200 negative controls completed from a prefix.
+A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed — AUC **0.776**. The same threshold decomposes as **1x 0/34**, **4x 2/33**, **16x 16/33**: the pooled 18% is substantially a duplication/exposure stress signal, not an 18% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
 
 A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) lives in `examples/alpaca-case-study-report.json` and the case-study appendix — not the headline. The already-measured distilgpt2 n=100/200 rows (TPR 0.000 [0, 0.036], risky AUC 0.848) stay in the LoRA benchmark table below.
 
@@ -226,18 +227,24 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 
 ## What the report means
 
-`memaudit-report.json` is schema `1.1.0` (`schema_version`; additive on `1.0.0` -- every 1.0.0 field is still there). Headline fields:
+`memaudit-report.json` is schema `1.2.0` (`schema_version`; additive on `1.1.0` / `1.0.0` -- every earlier field is still there). Headline fields:
 
 | Field | Meaning |
 |---|---|
 | `membership.headline_attack` | Pre-declared **base-calibrated Min-K%++** (same two forwards also yield masked loss, loss ratio, Min-K%) |
-| `membership.tpr_at_1pct_fpr` | Detection rate on inserted canaries at 1% FPR, thresholded on **held-out** canaries. `null` when `n_controls < 100` (`headline_valid=false`) |
+| `membership.scorer` | Pluggable backend provenance: `{name, version}` (default `min_k_plus_plus`; EZ-MIA is a documented future file, not shipped) |
+| `membership.tpr_at_1pct_fpr` | Detection rate on inserted canaries at the profile target FPR (default 1%), thresholded on **held-out canary** controls. `null` when `headline_valid=false` (underpowered controls, or `audit_profile=smoke`) |
+| `membership.by_repetition` | Same threshold, split by 1x / 4x / 16x / pooled. 1x is a single-exposure probe; pooled is the powered-audit headline |
+| `membership.calibration_stability` | Bootstrap-resample controls; how much the FPR threshold and TPR move (separate from the member-side CI) |
 | `membership.ci_low` / `ci_high` | Clopper-Pearson 95% interval. With tens of canaries this interval is wide  -  that is honest |
 | `membership.auc` | Secondary. Average-case; not the headline |
+| `audit_profile` | `smoke` (refuses TPR@FPR headline) / `routine` / `powered` (or `custom` if inferred) plus `target_fpr` |
+| `canaries.requested_family` / `actual_generator` | Requested construction vs what actually drew the tokens (a `high_ppl` run can be `uniform_vocab`) |
 | `regurgitation.overall.rate` | Fraction of inserted canaries the model completes from a 25% / 50% prefix (exact, BLEU>0.75, or sliding-window NED<=0.1) |
+| `regurgitation.detected` | Protocol-scoped exact-match count: "N/M under this prefix/decoding/exact-match protocol" -- never "no extraction risk" |
 | `regurgitation.by_tier` | Same rate at repetition 1 / 4 / 16. 1x is MIA-tier only |
 | `negative_controls` | Never-inserted canaries. Always run |
-| `real_records.set_level` | Exploratory t-test on a sample of real rows vs held-out. Per-record list is **hashed**, not a verdict |
+| `real_records.set_level` | Inferential member-vs-nonmember test **only** when `held_out=` is supplied (`comparison_population: held_out`). Otherwise descriptive ranking of a training-split sample; no FPR, not evidence about any individual record |
 | `audit_seconds` | Wall-clock of the audit engine |
 | `recommendations` | Heuristics (dedup -> fewer epochs -> cooler LoRA -> ...). Not a compliance program |
 | `compliance_annex` | EDPB Opinion 28/2024 mapping: attack-coverage table (para 55), threat models (para 58(c)), test scope, release context (para 46), limitations. New in 1.1.0 |
@@ -250,7 +257,7 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 
 Scores are computed on the **secret span only**. Full-sequence loss collapses detection.
 
-## Compliance annex, verify, multi-seed (schema 1.1.0)
+## Compliance annex, verify, multi-seed (schema 1.2.0)
 
 **EDPB-mapped annex.** Every report carries a `compliance_annex` implementing the [EDPB Opinion 28/2024](https://www.edpb.europa.eu/) para 46 / para 55 / para 58 mapping: an attack-coverage table (membership inference para 55(i) and regurgitation para 55(iii) **in scope** with methods; attribute inference, exfiltration para 55(ii), model inversion para 55(iv), reconstruction para 55(v) explicitly **out of scope**), a threat model per attack and per canary family used (attacker access + assumptions, sourced from the published literature), test-scope metadata (n canaries, reps grid, seeds, dataset rows, negative-control results, run date, tool version), the user-declared release context, and a limitations statement quoting para 55: *"successful testing which covers widely known, state-of-the-art attacks can only be evidence for the resistance to those attacks."* The annex is documented test evidence -- it does **not** constitute a determination of anonymity or GDPR compliance. Render it as markdown for a DPO:
 
@@ -301,19 +308,19 @@ Ten landmines encoded in the implementation (source-checked against transformers
 
 | Family | Construction |
 |---|---|
-| `high_ppl` **(default)** | Rejection-sample from the base model at high temperature into a PPL band. **If no model is passed**, falls back to rare-token unigram draws from the existing vocab (recorded in `generation_notes`) |
+| `high_ppl` **(default)** | Rejection-sample from the base model at high temperature into a PPL band. **If no model is passed** and a corpus is supplied, falls back to rare-token unigram; **if no model and no corpus**, falls back to uniform-from-vocab (recorded as `actual_generator` / `metadata.source`) |
 | `unigram` / `bigram` | Least-likely tokens under corpus n-gram counts; uniform-from-vocab if no corpus |
 | `structured` | `CANARY-ID:...` template + random fill (exposure metric later) |
 | `random` | Uniform existing-vocab draws (also used as control twins) |
 | `new_token` | Gated by the PEFT pre-flight  frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
 
-Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline. Use >=200 / >=200 for a production audit.
+Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor; the `routine` profile shape), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Named profiles: `smoke` (cheap, refuses the TPR@FPR headline), `routine` (those defaults), `powered` (100/200/{1,4,16}, calibration stability required). Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline unless you asked for `smoke`. The public powered case study stays 100/200/{1,4,16}.
 
 ## Limitations
 
 - Small canary counts give wide CIs. Published audits use hundreds to thousands of canaries. v0.1 defaults are a CPU-friendly starting point, not a regulatory sample size.
 - Thresholds are calibrated **on this run's controls** and do not transfer across model families.
-- Real-record per-item flags are noisy (published AUC ~0.72-0.78 on honest fine-tunes). Believe the set-level test, not a single hash.
+- Real-record ranking is exploratory and descriptive: no FPR is attached, and it is not evidence about any individual record. Set-level member-vs-nonmember inference needs a user-supplied genuine held-out population.
 - Black-box, final-model audits are structurally loose. A small TPR is not a privacy certificate.
 - The README demo **overfits on purpose** (canaries ~ 99% of tokens). Your production run should stay near the 0.1% token-budget target.
 - Multi-seed mode measures **audit-procedure variance only** (bootstrap threshold calibration + real-record sampling); re-training across seeds is out of scope.

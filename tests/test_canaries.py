@@ -32,7 +32,12 @@ def test_high_ppl_fallback_without_model(tokenizer):
         assert c.secret
         assert len(c.secret_token_ids) >= 8
         assert "no model provided" in c.generation_notes
+        assert "fell back to rare-token unigram" not in c.generation_notes
+        assert "uniform-from-vocab" in c.generation_notes
         assert c.family == "high_ppl"
+        assert c.requested_family == "high_ppl"
+        assert c.actual_generator == "uniform_vocab"
+        assert c.metadata.get("source") == "uniform_vocab"
         # existing vocab only
         assert all(0 <= i < tokenizer.vocab_size for i in c.secret_token_ids)
 

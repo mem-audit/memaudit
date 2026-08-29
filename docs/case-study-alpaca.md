@@ -29,7 +29,7 @@ The README API (`generate_canaries` + `inject` + `MemorizationAuditCallback`) on
 
 Wall-clock: load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h 43 min (05:11–09:54 IST).
 
-`high_ppl` was called without `model=` (README snippet). The family then uses the documented rare-token unigram fallback.
+`high_ppl` was requested without `model=` (README snippet). With no model and no corpus, generation used the `uniform_vocab` fallback (uniform draws from non-special vocab) — not model-scored high-perplexity canaries and not rare-token unigram. The measured TPR numbers below are unchanged.
 
 ## Headline numbers (from `alpaca-powered-report.json`)
 
@@ -37,6 +37,7 @@ Wall-clock: load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h
 |---|---|
 | `membership.headline_attack` | `base_calibrated_min_k_plus_plus` |
 | `membership.tpr_at_1pct_fpr` | **0.180** (18/100) |
+| Repetition-tier curve (same threshold) | **1x 0/34**, **4x 2/33**, **16x 16/33** |
 | `membership.ci_low` / `ci_high` | **[0.110, 0.269]** (Clopper–Pearson 95%) |
 | `membership.headline_valid` | `true` |
 | `membership.auc` | **0.776** (secondary) |
@@ -49,7 +50,7 @@ Wall-clock: load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h
 
 ## Plain-language takeaway
 
-A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed — AUC **0.776**. The same run **did not regurgitate**: 0/100 canaries and 0/200 negative controls completed from a prefix.
+A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed — AUC **0.776**. The same threshold decomposes as **1x 0/34**, **4x 2/33**, **16x 16/33**: the pooled 18% is substantially a duplication/exposure stress signal, not an 18% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
 
 We did not cherry-pick a scarier threshold or drop the CI. If TPR is 0 with a tight interval, that is a sellable result (this LoRA did not leak at 1% FPR). If TPR is high with a tight interval, that is also sellable.
 

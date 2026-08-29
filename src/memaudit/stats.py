@@ -8,7 +8,11 @@ from typing import Any
 import numpy as np
 from scipy import stats as scipy_stats
 
-from memaudit.constants import MIN_CONTROLS_FOR_TPR_AT_1PCT
+from memaudit.constants import (
+    CALIBRATION_BOOTSTRAP_N,
+    MIN_CONTROLS_FOR_TPR_AT_1PCT,
+    REPETITION_TIER_MEANING,
+)
 
 
 def clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
@@ -138,6 +142,143 @@ def tpr_at_fpr(
         "achievable_fpr": achievable_fpr,
         "warning": warning,
     }
+
+
+def membership_by_repetition(
+    per_canary: list[dict[str, Any]],
+    threshold: float,
+    *,
+    pooled_n_detected: int | None = None,
+    pooled_n_members: int | None = None,
+    pooled_tpr: float | None = None,
+    pooled_ci: tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    """Stress-response curve: TPR at the *pooled* control threshold, by tier.
+
+    1x is a single-exposure probe, 4x moderate stress, 16x high-exposure
+    stress, pooled is the powered-audit headline. Detection uses the same
+    threshold as the overall TPR@FPR so the tiers decompose that headline.
+    """
+    by_tier: dict[int, list[float]] = {}
+    for row in per_canary:
+        if not row.get("included"):
+            continue
+        score = (row.get("scores") or {}).get("headline_score")
+        if score is None or score != score:
+            continue
+        tier = int(row.get("repetitions") or 1)
+        by_tier.setdefault(tier, []).append(float(score))
+    out: dict[str, Any] = {}
+    thresh_ok = threshold == threshold  # not NaN
+    for tier in sorted(by_tier):
+        scores = by_tier[tier]
+        n = len(scores)
+        n_det = int(sum(s >= threshold for s in scores)) if thresh_ok else 0
+        tpr = float(n_det / n) if n else float("nan")
+        ci_low, ci_high = clopper_pearson(n_det, n) if n else (float("nan"), float("nan"))
+        out[str(tier)] = {
+            "n": n,
+            "detected": n_det,
+            "tpr": tpr,
+            "ci_low": ci_low,
+            "ci_high": ci_high,
+            "meaning": REPETITION_TIER_MEANING.get(tier, "repetition-tier probe"),
+        }
+    n_p = pooled_n_members
+    d_p = pooled_n_detected
+    if n_p is None:
+        n_p = sum(b["n"] for b in out.values())
+    if d_p is None:
+        d_p = sum(b["detected"] for b in out.values())
+    tpr_p = pooled_tpr if pooled_tpr is not None else (float(d_p / n_p) if n_p else float("nan"))
+    if pooled_ci is not None:
+        ci_l, ci_h = pooled_ci
+    elif n_p:
+        ci_l, ci_h = clopper_pearson(int(d_p), int(n_p))
+    else:
+        ci_l, ci_h = float("nan"), float("nan")
+    out["pooled"] = {
+        "n": int(n_p),
+        "detected": int(d_p),
+        "tpr": tpr_p,
+        "ci_low": ci_l,
+        "ci_high": ci_h,
+        "meaning": REPETITION_TIER_MEANING["pooled"],
+    }
+    out["note"] = (
+        "Tiers share the pooled control-calibrated threshold. "
+        "1x ≈ single-exposure probe; 4x ≈ moderate stress; 16x ≈ high-exposure "
+        "stress; pooled is the powered-audit headline. A pooled TPR can be "
+        "substantially a duplication/exposure stress signal rather than a "
+        "single-exposure detection probability."
+    )
+    return out
+
+
+def bootstrap_calibration_stability(
+    member_scores: np.ndarray | list[float],
+    control_scores: np.ndarray | list[float],
+    fpr: float = 0.01,
+    n_bootstrap: int = CALIBRATION_BOOTSTRAP_N,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """How much the FPR threshold and resulting TPR move under control resampling.
+
+    Separate from the member-side Clopper-Pearson CI: this is threshold /
+    calibration uncertainty. Cheap enough for a single run (default 50 draws).
+    """
+    members = np.asarray(member_scores, dtype=np.float64)
+    controls = np.asarray(control_scores, dtype=np.float64)
+    n_m = int(members.size)
+    n_c = int(controls.size)
+    base = {
+        "kind": "control_resample_threshold",
+        "n_bootstrap": 0,
+        "target_fpr": float(fpr),
+        "note": (
+            "Bootstrap-resample held-out canary controls, recompute the "
+            f"{fpr:.0%} FPR threshold and the resulting TPR. This is "
+            "calibration stability, not the member-side Clopper-Pearson CI."
+        ),
+    }
+    if n_m < 1 or n_c < 2 or n_bootstrap < 1:
+        base["note"] = (
+            "need inserted members and >=2 controls to resample the threshold; "
+            "calibration stability was not computed"
+        )
+        return base
+    rng = np.random.default_rng(int(seed))
+    thresholds: list[float] = []
+    tprs: list[float] = []
+    for _ in range(int(n_bootstrap)):
+        boot = rng.choice(controls, size=n_c, replace=True)
+        det = tpr_at_fpr(members, boot, fpr=fpr)
+        if det["threshold"] == det["threshold"]:
+            thresholds.append(float(det["threshold"]))
+        if det["tpr"] == det["tpr"]:
+            tprs.append(float(det["tpr"]))
+    if not thresholds or not tprs:
+        return base
+    t_arr = np.asarray(thresholds, dtype=np.float64)
+    p_arr = np.asarray(tprs, dtype=np.float64)
+    base["n_bootstrap"] = int(n_bootstrap)
+    base["threshold"] = {
+        "mean": float(t_arr.mean()),
+        "std": float(t_arr.std()),
+        "min": float(t_arr.min()),
+        "max": float(t_arr.max()),
+        "p05": float(np.quantile(t_arr, 0.05)),
+        "p95": float(np.quantile(t_arr, 0.95)),
+    }
+    base["tpr"] = {
+        "mean": float(p_arr.mean()),
+        "std": float(p_arr.std()),
+        "min": float(p_arr.min()),
+        "max": float(p_arr.max()),
+        "p05": float(np.quantile(p_arr, 0.05)),
+        "p95": float(np.quantile(p_arr, 0.95)),
+    }
+    return base
 
 
 def welch_ttest(
