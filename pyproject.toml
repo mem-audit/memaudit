@@ -77,7 +77,7 @@ markers = [
     "smoke: optional CPU integration with a tiny randomly-initialized model",
     "demo: slower one-command demo / live train",
     "peft: requires peft to import",
-    "integration: live TRL SFTTrainer run (needs trl + hub model; opt in with MEMAUDIT_RUN_SFT=1)",
+    "integration: live opt-in integrations (TRL SFTTrainer run with MEMAUDIT_RUN_SFT=1; real bitsandbytes 4-bit QLoRA)",
 ]
 
 [tool.ruff]
