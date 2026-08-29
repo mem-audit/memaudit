@@ -275,8 +275,12 @@ def detect_quantization(model: Any) -> dict[str, Any]:
     if qcfg is not None:
         kinds.append("quantization_config")
         qtype = getattr(qcfg, "quant_method", None) or getattr(qcfg, "load_in_4bit", None)
-        if qtype is not None and str(qtype) not in kinds:
-            kinds.append(str(qtype))
+        if qtype is not None:
+            # quant_method is a (str, Enum) in transformers; str() would record
+            # the enum repr ("QuantizationMethod.BITS_AND_BYTES"), not "bitsandbytes".
+            label = str(getattr(qtype, "value", qtype))
+            if label not in kinds:
+                kinds.append(label)
     named = getattr(model, "named_modules", None)
     if callable(named):
         try:
