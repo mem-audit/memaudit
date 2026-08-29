@@ -7,7 +7,7 @@ from __future__ import annotations
 # fields, real-record inferential-vs-descriptive split, membership.scorer).
 SCHEMA_VERSION = "1.2.0"
 DEFAULT_MEMBERSHIP_SCORER = "min_k_plus_plus"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 
 HEADLINE_ATTACK = "base_calibrated_min_k_plus_plus"
 HEADLINE_ATTACK_FALLBACK = "min_k_plus_plus"
