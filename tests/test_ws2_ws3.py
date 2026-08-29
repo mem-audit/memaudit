@@ -36,7 +36,9 @@ def _tiny_manifest(tokenizer, n=4, n_controls=6, reps=(1, 4, 16), profile=None, 
 
 
 def test_membership_by_repetition_decomposes_pooled_threshold():
-    # Mirror the shipped powered curve: 1x 0/34, 4x 2/33, 16x 16/33 at t=3.626
+    # Synthetic tier curve (1x 0/34, 4x 2/33, 16x 16/33) shaped like the
+    # archived v0.1 uniform_vocab run; the values are a fixture, not a claim
+    # about the currently shipped report.
     threshold = 3.626
     rows = []
     for _ in range(34):
