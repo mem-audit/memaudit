@@ -280,6 +280,43 @@ def test_fixture_c_padding_free_first_token_is_partial(tokenizer, tiny_model):
     assert any("partially supervised" in w for w in out["warnings"])
 
 
+def test_secret_only_in_raw_text_column_is_fatal_after_complete_scan(tokenizer, tiny_model):
+    """TRL 0.29.x keeps prompt/completion string columns on prepared rows.
+
+    A truncated-away secret still string-matches those untrained columns; that
+    must be a fatal supervision loss, not a verification_unknown footnote.
+    """
+    cans = generate_canaries(tokenizer, n=1, n_controls=0, family="random", seed=21, secret_len=25)
+    _, manifest = inject(
+        [{"prompt": "p", "completion": " c"}], cans, fmt="prompt_completion", seed=21, include_prob=1.0
+    )
+    c = _included(manifest)[0]
+    # Prepared-shape row: raw text columns survive, tokenized stream does not.
+    rows = [
+        {
+            "prompt": "long prompt that was truncated",
+            "completion": f"Your recovery phrase is {c['secret']}",
+            "input_ids": [10, 11, 12, 13],
+            "completion_mask": [0, 0, 0, 0],
+        }
+    ]
+    args = SimpleNamespace(max_length=None, completion_only_loss=True, packing=False)
+    trainer = SimpleNamespace(
+        data_collator=_MaskCollator(completion_only_loss=True),
+        completion_only_loss=True,
+        args=args,
+    )
+    out = _run(tiny_model, tokenizer, manifest, rows, args=args, trainer=trainer, raise_fatal=False)
+    assert out["survival"]["n_token_stream_missing"] == 1
+    ev = out["survival"]["per_canary"][0]
+    assert ev["token_stream_missing"] is True
+    assert ev["alignment"] == "string"
+    assert ev["directly_supervised"] is False
+    assert any("raw text" in f for f in out["fatal"])
+    with pytest.raises(MemauditPreflightError, match="raw text"):
+        _run(tiny_model, tokenizer, manifest, rows, args=args, trainer=trainer)
+
+
 def test_row_vanished_after_complete_scan_is_fatal(tokenizer, tiny_model):
     cans = generate_canaries(tokenizer, n=2, n_controls=0, family="random", seed=10, secret_len=25)
     _, manifest = inject([{"text": "host"}], cans, fmt="text", seed=10, include_prob=1.0)

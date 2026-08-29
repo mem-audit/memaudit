@@ -301,6 +301,9 @@ def _scan_one_canary(
                     )
                 )
             else:
+                stream_missing = ids is not None and not (
+                    secret and decoded and secret in decoded
+                )
                 hits.append(
                     AlignmentHit(
                         row=prep["row"],
@@ -308,6 +311,7 @@ def _scan_one_canary(
                         span=None,
                         alignment="string",
                         row_index=idx,
+                        token_stream_missing=stream_missing,
                     )
                 )
 
@@ -389,6 +393,7 @@ def survival_scan(
     n_unknown = 0
     n_deleted = 0
     mask_missing_ids: list[str] = []
+    stream_missing_ids: list[str] = []
 
     for canary in inserted:
         ev = _scan_one_canary(
@@ -411,6 +416,8 @@ def survival_scan(
                 masked_out += 1
             if any("configured masking is not present" in r for r in ev.reasons):
                 mask_missing_ids.append(ev.id)
+            if ev.token_stream_missing:
+                stream_missing_ids.append(ev.id)
         else:
             missing_ids.append(ev.id)
             if ev.miss_reason == "not_found_after_complete_scan":
@@ -437,6 +444,8 @@ def survival_scan(
         "n_row_deleted": n_deleted,
         "n_mask_column_missing": len(set(mask_missing_ids)),
         "mask_column_missing_ids": sorted(set(mask_missing_ids))[:20],
+        "n_token_stream_missing": len(set(stream_missing_ids)),
+        "token_stream_missing_ids": sorted(set(stream_missing_ids))[:20],
         "token_level_hits": token_hits,
         "string_level_hits": string_hits,
         "missing_ids": missing_ids[:20],
@@ -462,6 +471,10 @@ def _canary_record_n_tokens(
         if callable(apply):
             try:
                 ids = apply(rec["messages"], tokenize=True, add_generation_prompt=False)
+                # transformers >=5 returns a BatchEncoding dict by default
+                # (return_dict flipped); len(dict) would undercount to ~2.
+                if isinstance(ids, Mapping) or hasattr(ids, "keys"):
+                    ids = ids["input_ids"]
                 if hasattr(ids, "tolist"):
                     ids = ids.tolist()
                 if ids and isinstance(ids[0], (list, tuple)):
@@ -690,6 +703,27 @@ def run_preflight(
             "supervised-memorization probe — it does not mean the tokens are "
             "untrainable or that information cannot be memorized."
         )
+    if scan.get("n_token_stream_missing"):
+        stream_msg = (
+            f"{scan['n_token_stream_missing']} canaries appear only in raw text "
+            "columns of the prepared dataset "
+            f"(ids: {scan.get('token_stream_missing_ids')}); their secret tokens "
+            "are absent from the tokenized training stream (input_ids). "
+            "Truncation or re-tokenization removed the supervised span - the "
+            "model never trains on those tokens."
+        )
+        if scan.get("scan_complete"):
+            fatal.append(
+                stream_msg
+                + " This is a fatal supervision loss, verified after a complete "
+                "inspection of the prepared dataset."
+            )
+        else:
+            warnings.append(
+                stream_msg
+                + " The scan window is incomplete, so a surviving copy may exist "
+                "in unscanned rows."
+            )
     if scan.get("n_mask_column_missing"):
         msg = (
             f"{scan['n_mask_column_missing']} canary-bearing rows have no mask column "

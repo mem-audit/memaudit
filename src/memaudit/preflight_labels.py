@@ -142,6 +142,11 @@ class AlignmentHit:
     straddle: bool = False
     partner_row: Mapping[str, Any] | None = None
     row_index: int | None = None
+    # True when the secret was found only in a raw/auxiliary text column of a
+    # row whose tokenized stream (input_ids) provably lacks the secret tokens.
+    # TRL 0.29.x keeps the original prompt/completion/messages string columns
+    # on the prepared dataset, so a truncated-away secret still string-matches.
+    token_stream_missing: bool = False
 
 
 def align_in_ids(
@@ -352,6 +357,7 @@ class CanaryEvidence:
     labels_source: str | None = None
     supervised_token_fraction: float | None = None
     split_across_packed_rows: bool = False
+    token_stream_missing: bool = False
     miss_reason: str | None = None
     reasons: list[str] = field(default_factory=list)
 
@@ -368,6 +374,7 @@ class CanaryEvidence:
             "labels_source": self.labels_source,
             "supervised_token_fraction": self.supervised_token_fraction,
             "split_across_packed_rows": self.split_across_packed_rows,
+            "token_stream_missing": self.token_stream_missing,
             "miss_reason": self.miss_reason,
             "reasons": list(self.reasons),
         }
@@ -420,7 +427,15 @@ def finalize_evidence(
         )
     elif hit.alignment == "string":
         ev.alignment = "string"
-        ev.reasons.append("observed in decoded/record text; token span not aligned")
+        if hit.token_stream_missing:
+            ev.token_stream_missing = True
+            ev.reasons.append(
+                "secret found only in a raw text column of the prepared row; the "
+                "tokenized training stream (input_ids) does not contain the secret "
+                "tokens (truncation or re-tokenization removed the supervised span)"
+            )
+        else:
+            ev.reasons.append("observed in decoded/record text; token span not aligned")
 
     if labels_result is None:
         return _cap_unknown(

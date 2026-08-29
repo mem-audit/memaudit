@@ -57,7 +57,7 @@ def test_sft_live_end_to_end(tmp_path):
     report_path = out_dir / "sft-benchmark-report.json"
     assert report_path.is_file()
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert report["schema_version"].startswith("1.1")
+    assert report["schema_version"].startswith("1.2")
     assert report["report_sha256"]
     assert report["compliance_annex"]["release_context"]["declared"] == "internal"
     assert report["stability"]["variance"]["per_seed"]
