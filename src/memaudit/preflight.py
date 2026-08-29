@@ -12,119 +12,150 @@ from typing import Any
 
 from memaudit.constants import MIN_CONTROLS_FOR_TPR_AT_1PCT
 from memaudit.exceptions import MemauditPreflightError
-from memaudit.utils import encode_ids, example_text, find_subsequence, is_peft_model
-
-
-def _peft_cfg(model: Any) -> Any | None:
-    cfgs = getattr(model, "peft_config", None)
-    if not cfgs:
-        return None
-    if isinstance(cfgs, dict):
-        adapter = getattr(model, "active_adapter", None)
-        if adapter is not None and adapter in cfgs:
-            return cfgs[adapter]
-        if cfgs:
-            return next(iter(cfgs.values()))
-    return cfgs
-
-
-def _wrapper_names(module: Any) -> set[str]:
-    names: set[str] = set()
-    for cls in type(module).__mro__:
-        names.add(cls.__name__)
-    return names
+from memaudit.preflight_labels import (
+    AlignmentHit,
+    CanaryEvidence,
+    align_in_ids,
+    align_straddle,
+    context_needles,
+    effective_labels,
+    finalize_evidence,
+    mask_column_missing,
+    row_has_text_keys,
+    row_input_ids,
+)
+from memaudit.peft_semantics import (
+    capture_disabled_logits,
+    inspect_peft_embeddings,
+    trainable_token_canary_findings,
+)
+from memaudit.utils import (
+    dataset_length,
+    decode_ids,
+    encode_ids,
+    example_text,
+    is_peft_model,
+)
 
 
 def inspect_embeddings(model: Any) -> dict[str, Any]:
-    info: dict[str, Any] = {
-        "trainable": False,
-        "input_trainable": False,
-        "output_trainable": False,
-        "mechanisms": [],
-        "tie_word_embeddings": None,
-        "modules_to_save": None,
-        "trainable_token_indices": None,
-        "bias": None,
-        "peft_type": None,
-        "r": None,
-        "lora_alpha": None,
-        "merged": None,
-        "status_enabled": None,
-    }
-    if model is None:
-        return info
-    cfg = getattr(model, "config", None)
-    if cfg is not None:
-        info["tie_word_embeddings"] = getattr(cfg, "tie_word_embeddings", None)
-
-    peft_cfg = _peft_cfg(model)
-    if peft_cfg is not None:
-        info["bias"] = getattr(peft_cfg, "bias", None)
-        info["peft_type"] = str(getattr(peft_cfg, "peft_type", None))
-        info["r"] = getattr(peft_cfg, "r", None)
-        info["lora_alpha"] = getattr(peft_cfg, "lora_alpha", None)
-        info["modules_to_save"] = list(getattr(peft_cfg, "modules_to_save", None) or []) or None
-        info["trainable_token_indices"] = getattr(peft_cfg, "trainable_token_indices", None)
-
-    emb = getattr(model, "get_input_embeddings", lambda: None)()
-    out = getattr(model, "get_output_embeddings", lambda: None)()
-    if emb is not None:
-        names = _wrapper_names(emb)
-        if "ModulesToSaveWrapper" in names:
-            info["mechanisms"].append("ModulesToSaveWrapper")
-        if "TrainableTokensWrapper" in names:
-            info["mechanisms"].append("TrainableTokensWrapper")
-        if "BaseTunerLayer" in names or "lora.Embedding" in str(type(emb)) or "LoraLayer" in names:
-            if "Embedding" in type(emb).__name__ or hasattr(emb, "lora_embedding_A"):
-                info["mechanisms"].append("lora.Embedding")
-        try:
-            info["input_trainable"] = any(bool(p.requires_grad) for p in emb.parameters())
-        except Exception:
-            info["input_trainable"] = False
-        if not info["mechanisms"] and not info["input_trainable"]:
-            info["mechanisms"].append("plain_frozen_embedding")
-    if out is not None:
-        try:
-            info["output_trainable"] = any(bool(p.requires_grad) for p in out.parameters())
-        except Exception:
-            info["output_trainable"] = False
-    info["trainable"] = bool(info["input_trainable"] or info["output_trainable"])
-
-    if is_peft_model(model):
-        # Do not import peft here: a broken transformers/torch pair can hang
-        # on FSDP symbols. Use peft only if the user already loaded it.
-        import sys
-
-        peft_mod = sys.modules.get("peft")
-        get_status = getattr(peft_mod, "get_model_status", None) if peft_mod is not None else None
-        if callable(get_status):
-            try:
-                status = get_status(model)
-                info["merged"] = getattr(status, "merged", None)
-                info["status_enabled"] = getattr(status, "enabled", None)
-            except Exception:
-                info["merged"] = getattr(model, "merged", None)
-        else:
-            info["merged"] = getattr(model, "merged", None)
-    return info
+    """Inspect live embedding / adapter state. See ``peft_semantics`` for the matrix."""
+    return inspect_peft_embeddings(model)
 
 
-def inspect_training_args(args: Any | None) -> dict[str, Any]:
+def _first_row(dataset: Any) -> Mapping[str, Any] | None:
+    if dataset is None:
+        return None
+    try:
+        row = dataset[0]
+        if isinstance(row, Mapping):
+            return row
+    except Exception:
+        return None
+    return None
+
+
+def _sniff_completion_only_loss(dataset: Any) -> bool | None:
+    row = _first_row(dataset)
+    if row is None:
+        return None
+    return "prompt" in row and "completion" in row
+
+
+def _dataset_kwargs(args: Any | None) -> dict[str, Any]:
     if args is None:
         return {}
-    packing = getattr(args, "packing_strategy", None)
-    packing_flag = getattr(args, "packing", None)
+    raw = getattr(args, "dataset_kwargs", None)
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    if raw is None:
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("skip_prepare_dataset",):
+        if hasattr(raw, key):
+            out[key] = getattr(raw, key)
+    return out
+
+
+def inspect_training_args(
+    args: Any | None,
+    trainer: Any | None = None,
+    dataset: Any | None = None,
+    tokenizer: Any | None = None,
+) -> dict[str, Any]:
+    """Read live trainer/args/dataset. Record effective values; never invent them."""
+    if args is None and trainer is None:
+        return {}
+    if args is None:
+        args = getattr(trainer, "args", None)
+    packing = getattr(args, "packing_strategy", None) if args is not None else None
+    packing_flag = getattr(args, "packing", None) if args is not None else None
+    col_args = getattr(args, "completion_only_loss", None) if args is not None else None
+    asst_args = getattr(args, "assistant_only_loss", None) if args is not None else None
+
+    effective_col = None
+    if trainer is not None:
+        effective_col = getattr(trainer, "completion_only_loss", None)
+        if effective_col is None:
+            collator = getattr(trainer, "data_collator", None)
+            effective_col = getattr(collator, "completion_only_loss", None)
+    if effective_col is None and col_args is not None:
+        effective_col = col_args
+    if effective_col is None:
+        sniffed = _sniff_completion_only_loss(dataset)
+        if sniffed is not None:
+            effective_col = sniffed
+
+    padding_free = getattr(args, "padding_free", None) if args is not None else None
+    padding_free_forced = False
+    if trainer is not None and getattr(trainer, "padding_free", None) is not None:
+        padding_free = getattr(trainer, "padding_free")
+    if packing_flag and packing in (None, "bfd") and not padding_free:
+        padding_free = True
+        padding_free_forced = True
+
+    skip_prepare = bool(_dataset_kwargs(args).get("skip_prepare_dataset"))
+    use_liger = getattr(args, "use_liger_kernel", None) if args is not None else None
+
+    first = _first_row(dataset)
+    columns = list(first.keys()) if first is not None else None
+    pretokenized = bool(first is not None and "input_ids" in first)
+
+    tok = tokenizer
+    if tok is None and trainer is not None:
+        tok = getattr(trainer, "processing_class", None) or getattr(trainer, "tokenizer", None)
+    tmpl = getattr(tok, "chat_template", None) if tok is not None else None
+    has_generation = None
+    if isinstance(tmpl, str) and tmpl:
+        has_generation = "{% generation %}" in tmpl
+
     return {
         "packing_strategy": packing,
         "packing": packing_flag,
-        "max_length": getattr(args, "max_length", None) or getattr(args, "max_seq_length", None),
-        "completion_only_loss": getattr(args, "completion_only_loss", None),
-        "assistant_only_loss": getattr(args, "assistant_only_loss", None),
-        "learning_rate": getattr(args, "learning_rate", None),
-        "num_train_epochs": getattr(args, "num_train_epochs", None),
-        "output_dir": getattr(args, "output_dir", None),
-        "deepspeed": getattr(args, "deepspeed", None),
-        "fsdp": getattr(args, "fsdp", None) or getattr(args, "fsdp_config", None),
+        "max_length": (
+            getattr(args, "max_length", None) or getattr(args, "max_seq_length", None)
+            if args is not None
+            else None
+        ),
+        "completion_only_loss": col_args,
+        "completion_only_loss_effective": effective_col,
+        "assistant_only_loss": asst_args,
+        "chat_template_has_generation_markers": has_generation,
+        "skip_prepare_dataset": skip_prepare,
+        "padding_free": padding_free,
+        "padding_free_forced_by_bfd": padding_free_forced,
+        "use_liger_kernel": use_liger,
+        "pretokenized": pretokenized,
+        "dataset_columns": columns,
+        "learning_rate": getattr(args, "learning_rate", None) if args is not None else None,
+        "num_train_epochs": getattr(args, "num_train_epochs", None) if args is not None else None,
+        "output_dir": getattr(args, "output_dir", None) if args is not None else None,
+        "deepspeed": getattr(args, "deepspeed", None) if args is not None else None,
+        "fsdp": (
+            getattr(args, "fsdp", None) or getattr(args, "fsdp_config", None)
+            if args is not None
+            else None
+        ),
     }
 
 
@@ -196,19 +227,132 @@ def _dataset_rows(dataset: Any, limit: int = 50_000) -> list[Mapping[str, Any]]:
     return list(iter_examples(dataset, limit=limit))
 
 
-def _row_ids_and_labels(row: Mapping[str, Any], tokenizer: Any | None) -> tuple[list[int] | None, list[int] | None]:
-    ids = row.get("input_ids")
-    labels = row.get("labels")
-    if ids is not None:
-        if hasattr(ids, "tolist"):
-            ids = ids.tolist()
-        ids = [int(x) for x in ids]
-        if labels is not None:
-            if hasattr(labels, "tolist"):
-                labels = labels.tolist()
-            labels = [int(x) for x in labels]
-        return ids, labels
-    return None, None
+def _prepare_scan_rows(
+    rows: list[Mapping[str, Any]],
+    tokenizer: Any | None,
+    fmt: str,
+) -> list[dict[str, Any]]:
+    prepared: list[dict[str, Any]] = []
+    for row in rows:
+        ids = row_input_ids(row, tokenizer, fmt)
+        decoded = None
+        if ids is not None and tokenizer is not None:
+            try:
+                decoded = decode_ids(tokenizer, ids, skip_special_tokens=True)
+            except Exception:
+                decoded = None
+        use_fmt = fmt if row_has_text_keys(row) else "text"
+        blob = example_text(row, use_fmt)
+        prepared.append({"row": row, "ids": ids, "decoded": decoded, "blob": blob})
+    return prepared
+
+
+def _best_hit(hits: list[AlignmentHit]) -> AlignmentHit:
+    rank = {"exact": 0, "covering": 1, "straddle": 2, "string": 3}
+    return min(hits, key=lambda h: (rank.get(h.alignment, 9), 0 if h.span else 1))
+
+
+def _scan_one_canary(
+    canary: Mapping[str, Any],
+    prepared: list[dict[str, Any]],
+    *,
+    trainer: Any | None,
+    config: Mapping[str, Any],
+    tokenizer: Any | None,
+    fmt: str,
+    scan_complete: bool,
+    rows_total_known: bool,
+) -> CanaryEvidence:
+    cid = str(canary.get("id") or "?")
+    secret = str(canary.get("secret") or "")
+    needles = context_needles(canary, tokenizer, fmt)
+    hits: list[AlignmentHit] = []
+    for idx, prep in enumerate(prepared):
+        ids = prep["ids"]
+        aligned = align_in_ids(ids, needles, secret, tokenizer, prep["decoded"])
+        if aligned:
+            span, how = aligned
+            hits.append(
+                AlignmentHit(
+                    row=prep["row"],
+                    ids=ids,
+                    span=span,
+                    alignment=how,
+                    row_index=idx,
+                )
+            )
+            continue
+        blob = prep["blob"] or ""
+        decoded = prep["decoded"] or ""
+        if secret and (secret in blob or secret in decoded):
+            cover = None
+            if ids is not None and tokenizer is not None:
+                from memaudit.preflight_labels import char_cover_span
+
+                cover = char_cover_span(ids, secret, tokenizer)
+            if cover:
+                hits.append(
+                    AlignmentHit(
+                        row=prep["row"],
+                        ids=ids,
+                        span=cover,
+                        alignment="covering",
+                        row_index=idx,
+                    )
+                )
+            else:
+                hits.append(
+                    AlignmentHit(
+                        row=prep["row"],
+                        ids=ids,
+                        span=None,
+                        alignment="string",
+                        row_index=idx,
+                    )
+                )
+
+    if not hits:
+        for idx in range(len(prepared) - 1):
+            left, right = prepared[idx], prepared[idx + 1]
+            if not left["ids"] or not right["ids"]:
+                continue
+            loc = align_straddle(left["ids"], right["ids"], needles)
+            if loc:
+                hits.append(
+                    AlignmentHit(
+                        row=left["row"],
+                        ids=list(left["ids"]) + list(right["ids"]),
+                        span=loc,
+                        alignment="straddle",
+                        straddle=True,
+                        partner_row=right["row"],
+                        row_index=idx,
+                    )
+                )
+                break
+
+    ev = CanaryEvidence(id=cid)
+    hit = _best_hit(hits) if hits else None
+    labels_result = None
+    if hit is not None:
+        labels_result = effective_labels(hit.row, trainer, config)
+        if labels_result is None and hit.partner_row is not None:
+            labels_result = effective_labels(hit.partner_row, trainer, config)
+        if mask_column_missing(hit.row, config, fmt):
+            ev.reasons.append(
+                "configured masking is not present in the prepared data; "
+                "effective supervision is full-sequence; audit semantics "
+                "differ from the recorded protocol"
+            )
+    custom_loss = bool(trainer is not None and getattr(trainer, "compute_loss_func", None))
+    return finalize_evidence(
+        ev,
+        hit,
+        labels_result,
+        custom_loss=custom_loss,
+        scan_complete=scan_complete,
+        rows_total_known=rows_total_known,
+    )
 
 
 def survival_scan(
@@ -216,53 +360,68 @@ def survival_scan(
     manifest: dict[str, Any],
     tokenizer: Any | None = None,
     limit: int = 50_000,
+    trainer: Any | None = None,
+    args: Any | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Prove inserted canary secrets still appear (token-level, string fallback)."""
+    """Scan inserted canaries and record per-canary evidence levels + coverage."""
     fmt = manifest.get("fmt") or "text"
     inserted = [c for c in manifest.get("canaries") or [] if c.get("included")]
     rows = _dataset_rows(dataset, limit=limit)
+    rows_total = dataset_length(dataset)
+    scan_complete = rows_total is not None and len(rows) >= int(rows_total)
+    train_cfg = dict(config) if config is not None else inspect_training_args(
+        args if args is not None else getattr(trainer, "args", None),
+        trainer=trainer,
+        dataset=dataset,
+        tokenizer=tokenizer,
+    )
+    prepared = _prepare_scan_rows(rows, tokenizer, fmt)
+
+    per_canary: list[dict[str, Any]] = []
     found = 0
     masked_out = 0
-    missing_ids: list[str] = []
     token_hits = 0
     string_hits = 0
-
-    tokenized_rows: list[tuple[list[int], list[int] | None]] = []
-    string_blobs: list[str] = []
-    for row in rows:
-        ids, labels = _row_ids_and_labels(row, tokenizer)
-        if ids is not None:
-            tokenized_rows.append((ids, labels))
-        string_blobs.append(example_text(row, fmt if "text" in row or "messages" in row or "prompt" in row else "text"))
+    missing_ids: list[str] = []
+    n_directly = 0
+    n_mask_verified = 0
+    n_unknown = 0
+    n_deleted = 0
+    mask_missing_ids: list[str] = []
 
     for canary in inserted:
-        cid = canary.get("id", "?")
-        secret = canary.get("secret") or ""
-        needle = list(canary.get("secret_token_ids") or [])
-        hit = False
-        labels_all_ignore = False
-        for ids, labels in tokenized_rows:
-            loc = find_subsequence(ids, needle) if needle else None
-            if loc:
-                hit = True
-                token_hits += 1
-                if labels is not None:
-                    sl = labels[loc[0] : loc[1]]
-                    if sl and all(int(x) == -100 for x in sl):
-                        labels_all_ignore = True
-                break
-        if not hit and secret:
-            for blob in string_blobs:
-                if secret and secret in blob:
-                    hit = True
-                    string_hits += 1
-                    break
-        if hit:
+        ev = _scan_one_canary(
+            canary,
+            prepared,
+            trainer=trainer,
+            config=train_cfg,
+            tokenizer=tokenizer,
+            fmt=fmt,
+            scan_complete=scan_complete,
+            rows_total_known=rows_total is not None,
+        )
+        if ev.record_observed:
             found += 1
-            if labels_all_ignore:
+            if ev.alignment in {"exact", "covering"}:
+                token_hits += 1
+            elif ev.alignment == "string":
+                string_hits += 1
+            if ev.loss_mask_checked and ev.supervised_token_fraction == 0.0:
                 masked_out += 1
+            if any("configured masking is not present" in r for r in ev.reasons):
+                mask_missing_ids.append(ev.id)
         else:
-            missing_ids.append(cid)
+            missing_ids.append(ev.id)
+            if ev.miss_reason == "not_found_after_complete_scan":
+                n_deleted += 1
+        if ev.directly_supervised:
+            n_directly += 1
+        if ev.loss_mask_checked:
+            n_mask_verified += 1
+        if ev.verification_unknown:
+            n_unknown += 1
+        per_canary.append(ev.to_dict())
 
     n = len(inserted)
     return {
@@ -270,10 +429,80 @@ def survival_scan(
         "n_found": found,
         "n_missing": n - found,
         "n_fully_masked": masked_out,
+        "n_directly_supervised": n_directly,
+        "n_loss_mask_verified": n_mask_verified,
+        "loss_mask_verified": n_mask_verified,
+        "directly_supervised": n_directly,
+        "n_verification_unknown": n_unknown,
+        "n_row_deleted": n_deleted,
+        "n_mask_column_missing": len(set(mask_missing_ids)),
+        "mask_column_missing_ids": sorted(set(mask_missing_ids))[:20],
         "token_level_hits": token_hits,
         "string_level_hits": string_hits,
         "missing_ids": missing_ids[:20],
         "rows_scanned": len(rows),
+        "rows_total": rows_total,
+        "scan_complete": scan_complete,
+        "per_canary": per_canary,
+    }
+
+
+def _canary_record_n_tokens(
+    canary: Mapping[str, Any],
+    fmt: str,
+    tokenizer: Any,
+) -> int:
+    """Token count including chat-template / BOS-EOS overhead (not raw-blob only)."""
+    from memaudit.injection import canary_record
+    from memaudit.types import Canary
+
+    rec = canary_record(Canary.from_dict(dict(canary)), fmt)
+    if fmt == "messages":
+        apply = getattr(tokenizer, "apply_chat_template", None)
+        if callable(apply):
+            try:
+                ids = apply(rec["messages"], tokenize=True, add_generation_prompt=False)
+                if hasattr(ids, "tolist"):
+                    ids = ids.tolist()
+                if ids and isinstance(ids[0], (list, tuple)):
+                    ids = ids[0]
+                return len(ids)
+            except Exception:
+                pass
+    blob = example_text(rec, fmt)
+    return len(encode_ids(tokenizer, blob, add_special_tokens=True))
+
+
+def absent_preflight(*, path: str = "post_hoc_cli") -> dict[str, Any]:
+    """Honest block when preflight never ran (post-hoc CLI). Not a pass."""
+    note = (
+        "Preflight did not run. The Trainer callback runs these checks at "
+        "on_train_begin; this path did not. Supervision and survival evidence "
+        "is verification_unknown — this is not a pass."
+    )
+    return {
+        "ran": False,
+        "path": path,
+        "verification_unknown": True,
+        "note": note,
+        "embeddings": {},
+        "training": {},
+        "adapter_toggle_safe": None,
+        "survival": {
+            "rows_total": None,
+            "rows_scanned": None,
+            "scan_complete": None,
+            "loss_mask_verified": None,
+            "directly_supervised": None,
+        },
+        "rows_total": None,
+        "rows_scanned": None,
+        "scan_complete": None,
+        "loss_mask_verified": None,
+        "directly_supervised": None,
+        "findings": [],
+        "warnings": [note],
+        "fatal": [],
     }
 
 
@@ -286,34 +515,74 @@ def run_preflight(
     args: Any | None = None,
     train_dataset: Any | None = None,
     raise_fatal: bool = True,
+    scan_limit: int = 50_000,
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []
     fatal: list[str] = []
 
+    dataset = train_dataset
+    if dataset is None and trainer is not None:
+        dataset = getattr(trainer, "train_dataset", None)
+
     emb = inspect_embeddings(model)
-    train = inspect_training_args(args if args is not None else getattr(trainer, "args", None))
+    train = inspect_training_args(
+        args if args is not None else getattr(trainer, "args", None),
+        trainer=trainer,
+        dataset=dataset,
+        tokenizer=tokenizer,
+    )
 
     toggle_ok, toggle_reason = adapter_toggle_safe(emb)
     if toggle_reason:
         warnings.append(toggle_reason)
         findings.append({"code": "adapter_toggle", "level": "warning", "message": toggle_reason})
 
-    if train.get("packing_strategy") == "wrapped" or (
-        train.get("packing") and train.get("packing_strategy") == "wrapped"
-    ):
+    packing_strategy = train.get("packing_strategy")
+    if packing_strategy == "wrapped" or (train.get("packing") and packing_strategy == "wrapped"):
         msg = (
             "packing_strategy='wrapped' splits records mid-sequence and trains with "
             "cross-document attention. Audit scores will be biased low. Prefer bfd."
         )
         warnings.append(msg)
         findings.append({"code": "packing_wrapped", "level": "warning", "message": msg})
+    if packing_strategy in {"bfd-requeue", "bfd_split"}:
+        msg = (
+            f"packing_strategy={packing_strategy!r}: overflow is re-queued as detached "
+            "fragments, so a secret may survive but be detached from its prefix. "
+            "This strategy is not treated as wrapped and may not force padding-free."
+        )
+        warnings.append(msg)
+        findings.append({"code": "packing_overflow_requeue", "level": "warning", "message": msg})
 
     if train.get("packing"):
         warnings.append(
-            "Packing is on: first token of each packed document has labels=-100. "
+            "Packing is on: first token of each packed document has labels=-100 "
+            "when padding-free is on (bfd forces this). "
             "Scoring skips the first record token. Non-FlashAttention packing may "
             "cross-contaminate documents (TRL warning) - treat scores as slightly biased."
+        )
+
+    if train.get("skip_prepare_dataset"):
+        msg = (
+            "skip_prepare_dataset=True: TRL did not prepare the dataset. "
+            "Supervision is owned by the supplied collator. Pre-flight will invoke "
+            "the collator when possible; otherwise evidence is verification_unknown."
+        )
+        warnings.append(msg)
+        findings.append({"code": "skip_prepare_dataset", "level": "warning", "message": msg})
+
+    if train.get("use_liger_kernel"):
+        warnings.append(
+            "use_liger_kernel is on: user-supplied labels columns may be dropped "
+            "by TRL select_columns. Mask columns are inspected when present."
+        )
+
+    if train.get("assistant_only_loss") and train.get("chat_template_has_generation_markers") is False:
+        warnings.append(
+            "assistant_only_loss is on but the chat template has no {% generation %} "
+            "markers; assistant masks may be absent (verification_unknown if we "
+            "cannot read labels)."
         )
 
     max_len = train.get("max_length")
@@ -326,21 +595,16 @@ def run_preflight(
             n_tok = len(c.get("secret_token_ids") or [])
             if tokenizer is not None:
                 try:
-                    from memaudit.injection import canary_record
-                    from memaudit.types import Canary
-
-                    rec = canary_record(Canary.from_dict(c), fmt)
-                    blob = example_text(rec, fmt)
-                    n_tok = len(encode_ids(tokenizer, blob, add_special_tokens=False))
+                    n_tok = _canary_record_n_tokens(c, fmt, tokenizer)
                 except Exception:
                     pass
             if n_tok and n_tok > int(max_len):
                 too_long.append(c.get("id"))
         if too_long:
             msg = (
-                f"{len(too_long)} canary *records* (prefix + secret) exceed "
-                f"max_length={max_len} and will be truncated (keep_start). "
-                "This silently zeros those canaries."
+                f"{len(too_long)} canary *records* (prefix + secret, including "
+                f"chat-template / special-token overhead) exceed max_length={max_len} "
+                "and will be truncated (keep_start). This silently zeros those canaries."
             )
             fatal.append(msg)
 
@@ -356,7 +620,8 @@ def run_preflight(
         findings.append({"code": "tpr_underpowered", "level": "warning", "message": msg})
 
     fmt = manifest.get("fmt")
-    if train.get("completion_only_loss") and fmt == "text":
+    effective_col = train.get("completion_only_loss_effective")
+    if (train.get("completion_only_loss") or effective_col) and fmt == "text":
         warnings.append(
             "completion_only_loss is set but canaries were injected as 'text' records. "
             "If the live dataset is prompt+completion, re-inject with fmt='prompt_completion'."
@@ -367,10 +632,15 @@ def run_preflight(
             "User-turn / prompt secrets would be labeled -100."
         )
 
-    dataset = train_dataset
-    if dataset is None and trainer is not None:
-        dataset = getattr(trainer, "train_dataset", None)
-    scan = survival_scan(dataset, manifest, tokenizer=tokenizer)
+    scan = survival_scan(
+        dataset,
+        manifest,
+        tokenizer=tokenizer,
+        trainer=trainer,
+        args=args if args is not None else getattr(trainer, "args", None),
+        config=train,
+        limit=scan_limit,
+    )
     if scan["n_inserted"] == 0:
         fatal.append(
             "No canaries were marked included in the manifest. inject() coin-flips may "
@@ -378,35 +648,186 @@ def run_preflight(
             "would be silently empty."
         )
     elif scan["n_found"] == 0:
-        fatal.append(
-            f"0 of {scan['n_inserted']} inserted canary secrets were found in the training "
-            "dataset. Canary injection cannot happen inside the Trainer callback - the "
-            "dataloader is built (and TRL tokenizes/packs) before any hook fires. Call "
-            "memaudit.inject() on the RAW dataset BEFORE constructing Trainer/SFTTrainer."
-        )
+        if scan.get("scan_complete"):
+            fatal.append(
+                f"0 of {scan['n_inserted']} inserted canary secrets were found after a "
+                "complete inspection of the prepared dataset (possible TRL fully-masked "
+                "row filter, truncation, or formatting_func — not a scan-window miss). "
+                "Canary injection cannot happen inside the Trainer callback - the "
+                "dataloader is built (and TRL tokenizes/packs) before any hook fires. Call "
+                "memaudit.inject() on the RAW dataset BEFORE constructing Trainer/SFTTrainer."
+            )
+        else:
+            fatal.append(
+                f"0 of {scan['n_inserted']} inserted canary secrets were found in the "
+                f"scanned window ({scan.get('rows_scanned')} of {scan.get('rows_total')} "
+                "rows). Canary injection cannot happen inside the Trainer callback - the "
+                "dataloader is built (and TRL tokenizes/packs) before any hook fires. Call "
+                "memaudit.inject() on the RAW dataset BEFORE constructing Trainer/SFTTrainer."
+            )
     elif scan["n_missing"] > 0:
-        warnings.append(
-            f"{scan['n_missing']} inserted canaries were not found in the scanned dataset "
-            f"(missing ids: {scan['missing_ids']}). Truncation or a formatting_func may "
-            "have dropped them."
-        )
+        if scan.get("scan_complete"):
+            fatal.append(
+                f"{scan['n_missing']} inserted canaries are not present after a complete "
+                f"inspection of the prepared dataset (missing ids: {scan['missing_ids']}). "
+                "This is a fatal supervision loss (row deleted by a prep filter, or the "
+                "secret was truncated away) — not scan-window noise."
+            )
+        else:
+            warnings.append(
+                f"{scan['n_missing']} inserted canaries were not observed within the "
+                f"scan window (scanned {scan.get('rows_scanned')} of "
+                f"{scan.get('rows_total')} rows; missing ids: {scan['missing_ids']}). "
+                "They may still appear later in the dataset. Truncation or a "
+                "formatting_func is only a cause after a complete scan."
+            )
     if scan["n_fully_masked"] > 0:
         fatal.append(
             f"{scan['n_fully_masked']} canaries appear in input_ids but every secret token "
             "has labels=-100 (completion_only_loss / assistant_only_loss / packing). "
-            "The secret must live in the completion / assistant turn / text body - never "
-            "the prompt or user turn. The audit would be silently zeroed."
+            "The canary protocol expected this secret span to be directly supervised; "
+            "pre-flight did not verify that condition. This invalidates the "
+            "supervised-memorization probe — it does not mean the tokens are "
+            "untrainable or that information cannot be memorized."
+        )
+    if scan.get("n_mask_column_missing"):
+        msg = (
+            f"{scan['n_mask_column_missing']} canary-bearing rows have no mask column "
+            "while the training config says masking is on "
+            f"(ids: {scan.get('mask_column_missing_ids')}). Effective supervision is "
+            "full-sequence; audit semantics differ from the recorded protocol."
+        )
+        warnings.append(msg)
+        findings.append({"code": "mask_column_absent", "level": "warning", "message": msg})
+
+    unsupervised_ids = [
+        ev["id"]
+        for ev in (scan.get("per_canary") or [])
+        if ev.get("loss_mask_checked")
+        and ev.get("supervised_token_fraction") == 0.0
+        and ev.get("record_observed")
+    ]
+    if unsupervised_ids and scan["n_fully_masked"] == 0:
+        fatal.append(
+            f"{len(unsupervised_ids)} canaries have a secret span that is not directly "
+            "supervised (labels=-100 on every secret token). The canary protocol "
+            "expected this span to be directly supervised; this invalidates the "
+            "supervised-memorization probe."
         )
 
-    # new-token family leftover
+    unknown_checked = [
+        ev["id"]
+        for ev in (scan.get("per_canary") or [])
+        if ev.get("verification_unknown") and ev.get("record_observed")
+    ]
+    if unknown_checked:
+        warnings.append(
+            f"{len(unknown_checked)} observed canaries could not have their loss mask "
+            "verified (verification_unknown). This is not a silent pass."
+        )
+
+    partial = [
+        ev
+        for ev in (scan.get("per_canary") or [])
+        if ev.get("loss_mask_checked")
+        and ev.get("supervised_token_fraction") is not None
+        and 0.0 < float(ev["supervised_token_fraction"]) < 1.0
+    ]
+    if partial:
+        warnings.append(
+            f"{len(partial)} canaries are only partially supervised "
+            "(e.g. padding-free first-token -100). See per-canary "
+            "supervised_token_fraction."
+        )
+    straddled = [ev["id"] for ev in (scan.get("per_canary") or []) if ev.get("split_across_packed_rows")]
+    if straddled:
+        warnings.append(
+            f"{len(straddled)} canaries have a secret split across packed rows "
+            f"(ids: {straddled[:10]}). Membership scores measure two fragments, "
+            "not one contiguous supervised span."
+        )
+
+    # new-token family leftover + trainable_token_indices ∩ secret ids
     families = {c.get("family") for c in manifest.get("canaries") or []}
-    if "new_token" in families and not emb.get("trainable"):
+    trained_idx = emb.get("trainable_token_index_set")
+    tok_fatal, tok_warn, tok_rows = trainable_token_canary_findings(manifest, trained_idx)
+    fatal.extend(tok_fatal)
+    warnings.extend(tok_warn)
+    if tok_rows:
+        emb["canary_token_coverage"] = tok_rows
+        findings.append(
+            {
+                "code": "trainable_token_indices",
+                "level": "fatal" if tok_fatal else "info",
+                "message": "Intersected canary secret_token_ids with trainable_token_indices",
+                "n_frozen_canaries": sum(1 for r in tok_rows if r.get("all_frozen")),
+            }
+        )
+    if "new_token" in families and not emb.get("trainable") and not tok_fatal:
         fatal.append(
             "Manifest contains new_token canaries but embeddings are not trainable. "
             "That family is unimplemented/gated in v0.1 and would measure noise."
         )
 
+    tying = emb.get("weight_tying") or {}
+    if tying.get("tie_broken_by_wrap"):
+        msg = (
+            "tie_word_embeddings=True but wrapping one side of the tied pair "
+            "broke storage sharing (weight data_ptr diverged). Embedding-row "
+            "and output-row updates are no longer the same tensor."
+        )
+        warnings.append(msg)
+        findings.append({"code": "tie_broken_by_wrap", "level": "warning", "message": msg})
+    if emb.get("ensure_weight_tying") and tying.get("ensure_weight_tying_engaged") is False:
+        msg = (
+            "ensure_weight_tying is set but PEFT's name-gated tying did not "
+            "engage (names outside embed_tokens/lm_head, or copies do not share "
+            "storage). Embedding claims are verification_unknown."
+        )
+        warnings.append(msg)
+        findings.append({"code": "ensure_weight_tying_inert", "level": "warning", "message": msg})
+
+    if emb.get("target_parameters"):
+        msg = (
+            f"target_parameters={emb['target_parameters']!r} is experimental "
+            "(MoE / nn.Parameter LoRA). This is not an unexamined all-clear: "
+            "embedding/adapter verification is verification_unknown until the "
+            "audit-time base-equivalence guard can reason about the toggle."
+        )
+        warnings.append(msg)
+        findings.append({"code": "target_parameters", "level": "warning", "message": msg})
+
+    if emb.get("quantized"):
+        msg = (
+            "Quantized base detected "
+            f"({emb.get('quantization_kinds')}). disable_adapter() is the "
+            "matching reference; a separately loaded full-precision --ref "
+            "would silently bias base-calibrated scores."
+        )
+        warnings.append(msg)
+        findings.append({"code": "quantized_base", "level": "warning", "message": msg})
+
+    if emb.get("embedding_verification") == "verification_unknown":
+        for reason in emb.get("embedding_verification_reasons") or []:
+            if reason not in warnings:
+                warnings.append(reason)
+        findings.append(
+            {
+                "code": "embedding_verification_unknown",
+                "level": "warning",
+                "message": "; ".join(emb.get("embedding_verification_reasons") or ["unverified"]),
+            }
+        )
+
+    capture = None
+    if toggle_ok and is_peft_model(model) and tokenizer is not None:
+        capture = capture_disabled_logits(model, tokenizer, manifest=manifest)
+
+    embedding_unknown = emb.get("embedding_verification") == "verification_unknown"
     result = {
+        "ran": True,
+        "path": "callback",
+        "verification_unknown": bool(scan.get("n_verification_unknown") or embedding_unknown),
         "embeddings": emb,
         "training": {
             **train,
@@ -415,9 +836,16 @@ def run_preflight(
         },
         "adapter_toggle_safe": toggle_ok,
         "survival": scan,
+        "rows_total": scan.get("rows_total"),
+        "rows_scanned": scan.get("rows_scanned"),
+        "scan_complete": scan.get("scan_complete"),
+        "loss_mask_verified": scan.get("n_loss_mask_verified"),
+        "directly_supervised": scan.get("n_directly_supervised"),
         "findings": findings,
         "warnings": warnings,
         "fatal": fatal,
+        "per_canary": scan.get("per_canary") or [],
+        "base_equivalence_capture": capture,
     }
     if fatal and raise_fatal:
         raise MemauditPreflightError(" ".join(fatal))

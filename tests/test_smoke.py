@@ -42,6 +42,18 @@ def test_cpu_audit_two_verdicts(tokenizer, tiny_model, tmp_path):
     # both tiers actually ran
     assert any("regurgitation" in row for row in report["per_canary"])
     assert any("scores" in row and "masked_nll" in row["scores"] for row in report["per_canary"])
+    assert report["preflight"]["ran"] is False
+    assert report["preflight"].get("verification_unknown") is True
+    assert report["audit_scope"]["requested_family"]
+    assert report["audit_scope"]["actual_generator"]
+    if report.get("real_records"):
+        assert "n_comparison_split" in report["real_records"]
+        assert report["real_records"]["comparison_population"] in {
+            "training_split",
+            "held_out",
+            "none",
+        }
+        assert "n_held_out" not in report["real_records"]
 
 
 @pytest.mark.smoke
@@ -77,6 +89,8 @@ def test_callback_preflight_and_end(tokenizer, tiny_model, tmp_path):
     cb.on_train_end(args, state, control, model=tiny_model, processing_class=tokenizer)
     assert (tmp_path / "memaudit-report.json").is_file()
     assert cb.report["membership"]["headline_attack"]
+    assert cb.report["preflight"]["ran"] is True
+    assert cb.preflight.get("ran") is True
 
 
 def test_preflight_passes_on_injected(tokenizer, tiny_model):

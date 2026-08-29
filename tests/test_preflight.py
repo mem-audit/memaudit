@@ -18,6 +18,12 @@ def test_survival_scan_finds_injected(tokenizer):
     assert scan["n_inserted"] == manifest["n_inserted_canaries"]
     assert scan["n_found"] == scan["n_inserted"]
     assert scan["n_missing"] == 0
+    assert scan["rows_scanned"] == len(ds)
+    assert scan["rows_total"] == len(ds)
+    assert scan["scan_complete"] is True
+    assert scan["per_canary"]
+    for ev in scan["per_canary"]:
+        assert ev["record_observed"] is True
 
 
 def test_preflight_raises_if_not_injected(tokenizer, tiny_model):

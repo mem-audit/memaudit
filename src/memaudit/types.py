@@ -23,6 +23,8 @@ class Canary:
     role: str = "candidate"
     generation_notes: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    requested_family: str = ""
+    actual_generator: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -40,6 +42,15 @@ class Canary:
         payload.setdefault("id", data.get("id") or "unknown")
         payload.setdefault("secret", data.get("secret") or "")
         payload.setdefault("prefix", data.get("prefix") or "")
+        meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        payload.setdefault(
+            "requested_family",
+            data.get("requested_family") or data.get("family") or "random",
+        )
+        payload.setdefault(
+            "actual_generator",
+            data.get("actual_generator") or meta.get("source") or "",
+        )
         return cls(**payload)
 
 
