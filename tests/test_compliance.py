@@ -59,7 +59,7 @@ def _report(**overrides):
 
 
 def test_schema_bumped_additively():
-    assert SCHEMA_VERSION == "1.1.0"
+    assert SCHEMA_VERSION == "1.2.0"
     report = _report()
     # every 1.0.0 key still present (additive-only)
     for key in (

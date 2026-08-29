@@ -35,7 +35,8 @@ CANARY_FAMILY_THREAT_MODELS: dict[str, dict[str, str]] = {
         "construction": (
             "regular-token suffixes sampled from the base model at high "
             "temperature, rejection-sampled into a target perplexity band "
-            "(falls back to rare-token unigram draws when no model is given)"
+            "(falls back to uniform-from-vocab draws when no model and no corpus "
+            "are given; rare-token unigram only when a corpus is supplied)"
         ),
         "access_needed_to_generate": "sampling access to the base model (or none, in fallback)",
         "threat_scenario": (
@@ -194,17 +195,24 @@ def normalize_release_context(value: str | None) -> str:
 def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, Any]) -> list[dict[str, Any]]:
     """The para 55 attack-class table: what ran, what explicitly did not."""
     prefix_fracs = regurgitation.get("prefix_fractions")
+    headline = membership.get("headline_attack") or HEADLINE_ATTACK
+    scorer_meta = membership.get("scorer") or {}
+    scorer_note = ""
+    if scorer_meta.get("name"):
+        scorer_note = f" (scorer {scorer_meta.get('name')} v{scorer_meta.get('version')})"
     return [
         {
             "attack_class": "membership inference",
             "edpb_ref": "para 55(i)",
             "status": "in_scope",
             "method": (
-                f"pre-registered canary MIA: {membership.get('headline_attack') or HEADLINE_ATTACK} "
+                f"pre-registered canary MIA: {headline}{scorer_note} "
                 "on the secret span, thresholded on held-out canary controls "
-                "(TPR@1%FPR + Clopper-Pearson 95% CI; masked loss / loss ratio / "
-                "Min-K% / Min-K%++ from the same forward passes); set-level "
-                "reference-model comparison on sampled real records"
+                "(TPR at the profile target FPR + Clopper-Pearson 95% CI; "
+                "canaries detected at estimated FPR ≤ α by construction; "
+                "masked loss / loss ratio / Min-K% / Min-K%++ from the same "
+                "forward passes). Real-record ranking is descriptive unless a "
+                "genuine held-out population is supplied"
             ),
         },
         {
@@ -225,8 +233,10 @@ def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, A
             "status": "in_scope",
             "method": (
                 "greedy prefix-prompted completion on inserted canaries "
-                f"(prefix fractions {prefix_fracs}), scored exact / BLEU>0.75 / "
-                "sliding-window NED<=0.10, with never-inserted negative controls"
+                f"(prefix fractions {prefix_fracs}), protocol-scoped as "
+                "prefix/decoding/exact-match (BLEU/NED supplementary), "
+                "with never-inserted negative controls. A 0/N exact result "
+                "is not a claim of no extraction risk"
             ),
         },
         {
@@ -260,19 +270,29 @@ def build_compliance_annex(
     scope = dict(audit_scope or {})
     context = normalize_release_context(release_context)
     families_used = list(scope.get("families_used") or [])
-    family_rows = {
-        fam: CANARY_FAMILY_THREAT_MODELS.get(
-            fam,
-            {
-                "construction": "unknown family (not in the published table)",
-                "access_needed_to_generate": "unknown",
-                "threat_scenario": "unknown",
-                "source": "n/a",
-                "status": "unknown",
-            },
+    family_rows = {}
+    actual_gen = scope.get("actual_generator")
+    for fam in families_used:
+        row = dict(
+            CANARY_FAMILY_THREAT_MODELS.get(
+                fam,
+                {
+                    "construction": "unknown family (not in the published table)",
+                    "access_needed_to_generate": "unknown",
+                    "threat_scenario": "unknown",
+                    "source": "n/a",
+                    "status": "unknown",
+                },
+            )
         )
-        for fam in families_used
-    }
+        if actual_gen and not isinstance(actual_gen, (list, tuple)) and actual_gen != fam:
+            row["actual_generator"] = actual_gen
+            row["requested_family"] = scope.get("requested_family") or fam
+            row["construction"] = (
+                f"{row.get('construction')} [this run: requested_family={fam}, "
+                f"actual_generator={actual_gen}]"
+            )
+        family_rows[fam] = row
     return {
         "standard": "EDPB Opinion 28/2024 (adopted 17 December 2024), para 46 / para 55 / para 58",
         "disclaimer": ANNEX_DISCLAIMER,
@@ -288,6 +308,11 @@ def build_compliance_annex(
             "n_heldout_controls": scope.get("n_heldout_controls", membership.get("n_controls")),
             "repetition_grid": scope.get("repetition_grid"),
             "canary_families": families_used or None,
+            "requested_family": scope.get("requested_family"),
+            "actual_generator": scope.get("actual_generator"),
+            "requested_members": scope.get("requested_members"),
+            "audit_profile": scope.get("audit_profile"),
+            "target_fpr": scope.get("target_fpr") or membership.get("target_fpr"),
             "include_prob": scope.get("include_prob"),
             "seeds": {
                 "inject_seed": scope.get("inject_seed"),
@@ -306,6 +331,7 @@ def build_compliance_annex(
         "quantified_results": {
             "membership": {
                 "headline_attack": membership.get("headline_attack"),
+                "scorer": membership.get("scorer"),
                 "tpr_at_1pct_fpr": membership.get("tpr_at_1pct_fpr"),
                 "ci_low": membership.get("ci_low"),
                 "ci_high": membership.get("ci_high"),
@@ -313,10 +339,18 @@ def build_compliance_annex(
                 "auc_secondary": membership.get("auc"),
                 "n_members": membership.get("n_members"),
                 "n_controls": membership.get("n_controls"),
+                "target_fpr": membership.get("target_fpr"),
+                "detection_claim": membership.get("detection_claim"),
+                "by_repetition": membership.get("by_repetition"),
+                "calibration_stability": membership.get("calibration_stability"),
             },
             "regurgitation": {
                 "overall": regurgitation.get("overall"),
                 "by_tier": regurgitation.get("by_tier"),
+                "prefix_policy": regurgitation.get("prefix_policy"),
+                "decoding": regurgitation.get("decoding"),
+                "match_rule": regurgitation.get("match_rule"),
+                "detected": regurgitation.get("detected"),
             },
             "real_records_set_level": (real_records or {}).get("set_level"),
             "stability": (stability or {}).get("variance"),
@@ -428,15 +462,36 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
     add("| Metric | Value |")
     add("|---|---|")
     add(f"| Membership headline attack | `{mem.get('headline_attack')}` |")
+    scorer_row = mem.get("scorer") or {}
+    if scorer_row.get("name"):
+        add(
+            f"| Membership scorer | `{scorer_row.get('name')}` v{scorer_row.get('version')} |"
+        )
     tpr = mem.get("tpr_at_1pct_fpr")
     if mem.get("headline_valid") and tpr is not None:
-        add(f"| TPR @ 1% FPR | **{_fmt(tpr)}** (95% CI [{_fmt(mem.get('ci_low'))}, {_fmt(mem.get('ci_high'))}]) |")
+        claim = mem.get("detection_claim")
+        extra = f" — {claim}" if claim else ""
+        add(f"| TPR @ 1% FPR | **{_fmt(tpr)}** (95% CI [{_fmt(mem.get('ci_low'))}, {_fmt(mem.get('ci_high'))}]){extra} |")
     else:
-        add("| TPR @ 1% FPR | refused (underpowered control set; see membership.warning) |")
-    add(f"| Members / held-out controls | {_fmt(mem.get('n_members'))} / {_fmt(mem.get('n_controls'))} |")
+        add("| TPR @ target FPR | refused (see membership.warning / audit_profile) |")
+    add(f"| Members / held-out canary controls | {_fmt(mem.get('n_members'))} / {_fmt(mem.get('n_controls'))} |")
     add(f"| AUC (secondary, average-case) | {_fmt(mem.get('auc_secondary'))} |")
+    by_rep = mem.get("by_repetition") or {}
+    for tier in ("1", "4", "16", "pooled"):
+        block = by_rep.get(tier)
+        if not isinstance(block, dict):
+            continue
+        add(
+            f"| Membership at {tier} "
+            f"({block.get('meaning') or 'tier'}) | "
+            f"{_fmt(block.get('detected'))}/{_fmt(block.get('n'))} "
+            f"(TPR {_fmt(block.get('tpr'))}) |"
+        )
     overall = reg.get("overall") or {}
-    add(f"| Regurgitation rate (overall) | {_fmt(overall.get('rate'))} "
+    detected = reg.get("detected") or {}
+    if detected.get("wording"):
+        add(f"| Regurgitation (exact-match protocol) | {detected.get('wording')} |")
+    add(f"| Regurgitation rate (overall, incl. approx.) | {_fmt(overall.get('rate'))} "
         f"({_fmt(overall.get('n_regurgitated'))}/{_fmt(overall.get('n'))}) |")
     for tier, block in (reg.get("by_tier") or {}).items():
         add(f"| Regurgitation at {tier}x repetitions | {_fmt((block or {}).get('rate'))} |")
@@ -445,9 +500,14 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
         f"regurgitation {_fmt(neg.get('regurgitation_rate'))}, "
         f"mean headline score {_fmt(neg.get('mean_headline_score'))} |")
     set_level = (annex.get("quantified_results") or {}).get("real_records_set_level") or {}
-    if set_level:
-        add(f"| Real-record set-level test | p={_fmt(set_level.get('p_value'), 4)} "
-            f"(exploratory; per-record flags are not verdicts) |")
+    if set_level.get("inferential"):
+        add(f"| Real-record set-level test (user-supplied held-out) | p={_fmt(set_level.get('p_value'), 4)} "
+            f"(set-level only; not evidence about any individual record) |")
+    elif set_level:
+        add(
+            "| Real-record scores | descriptive ranking only "
+            "(no genuine held-out population; not a member-vs-nonmember test) |"
+        )
     add("")
 
     add("## 5. Threat model per test (para 58(c))")
@@ -475,10 +535,15 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
     add("")
     add("| Field | Value |")
     add("|---|---|")
+    if scope.get("audit_profile") or scope.get("target_fpr") is not None:
+        add(f"| Audit profile / target FPR | {scope.get('audit_profile')} / {_fmt(scope.get('target_fpr'))} |")
     add(f"| Canaries inserted | {_fmt(scope.get('n_canaries_inserted'))} |")
+    add(f"| Requested members | {_fmt(scope.get('requested_members'))} |")
     add(f"| Held-out canary controls | {_fmt(scope.get('n_heldout_controls'))} |")
     add(f"| Repetition grid | {scope.get('repetition_grid')} |")
     add(f"| Canary families | {scope.get('canary_families')} |")
+    if scope.get("requested_family") or scope.get("actual_generator"):
+        add(f"| Requested family / actual generator | {scope.get('requested_family')} / {scope.get('actual_generator')} |")
     add(f"| Inclusion probability (coin flips) | {_fmt(scope.get('include_prob'))} |")
     seeds = scope.get("seeds") or {}
     add(f"| Inject seed / audit seeds | {_fmt(seeds.get('inject_seed'))} / {seeds.get('audit_seeds') or 'single-seed'} |")

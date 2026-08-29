@@ -1,10 +1,11 @@
 """Versioned JSON report (schema v1.x). Additive-only within a major version.
 
-Schema 1.1.0 adds (all additive): ``compliance_annex`` (EDPB para 46/55/58
-mapping), ``release_context``, ``audit_scope``, optional ``stability``
-(multi-seed audit-procedure variance), enriched ``provenance``, and a
-``report_sha256`` self-hash written at save time plus a ``<report>.sha256``
-sidecar. ``memaudit verify`` recomputes and checks the self-hash.
+Schema 1.2.0 adds (all additive on 1.1.0): ``audit_profile``, top-level
+``canaries`` provenance, ``membership.by_repetition``,
+``membership.calibration_stability``, structured regurgitation protocol
+fields, and an inferential-vs-descriptive split on real records.
+``membership.scorer`` (name + version) is the pluggable-backend provenance
+field (WS5; additive on the same 1.2.0 schema).
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ def build_report(
     release_context: str | None = None,
     audit_scope: dict[str, Any] | None = None,
     stability: dict[str, Any] | None = None,
+    audit_profile: dict[str, Any] | None = None,
+    canaries: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     pre = preflight or {}
     findings = list(pre.get("findings") or [])
@@ -112,11 +115,21 @@ def build_report(
                     "LiRA / shadow models",
                     "SPV-MIA",
                     "PANORAMIA",
+                    "EZ-MIA (documented future MembershipScorer; not shipped)",
                 ],
             },
             "regurgitation": {
                 "method": "greedy prefix-prompt completion",
                 "prefix_fractions": regurgitation.get("prefix_fractions"),
+                "prefix_policy": regurgitation.get("prefix_policy"),
+                "decoding": regurgitation.get("decoding")
+                or {
+                    "strategy": "greedy",
+                    "do_sample": False,
+                    "temperature": None,
+                    "method": "greedy prefix-prompt completion",
+                },
+                "match_rule": regurgitation.get("match_rule") or "exact",
                 "thresholds": {"bleu": 0.75, "sliding_window_ned": 0.10},
             },
         },
@@ -125,6 +138,19 @@ def build_report(
         "negative_controls": negative_controls,
         "real_records": real_records,
         "stability": stability,
+        "audit_profile": audit_profile
+        or {
+            "name": (audit_scope or {}).get("audit_profile") or "unspecified",
+            "target_fpr": (membership or {}).get("target_fpr"),
+        },
+        "canaries": canaries
+        or {
+            "requested_family": (audit_scope or {}).get("requested_family"),
+            "actual_generator": (audit_scope or {}).get("actual_generator"),
+            "repetitions": (audit_scope or {}).get("repetition_grid"),
+            "requested_members": (audit_scope or {}).get("requested_members"),
+            "controls": (audit_scope or {}).get("n_heldout_controls"),
+        },
         "audit_scope": audit_scope,
         "compliance_annex": annex,
         "preflight": pre,

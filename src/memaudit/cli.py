@@ -136,6 +136,9 @@ def _cmd_audit(ns: argparse.Namespace) -> int:
         release_context=ns.release_context,
         dataset_path=ns.dataset,
         model_path=ns.model,
+        profile=ns.profile,
+        target_fpr=ns.target_fpr,
+        scorer=ns.scorer,
     )
     print(out)
     if report.get("report_sha256"):
@@ -248,7 +251,41 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     audit.add_argument("--dataset", default=None, help="Raw train JSON/JSONL for real-record sampling")
-    audit.add_argument("--held-out", default=None, help="Optional held-out JSON/JSONL")
+    audit.add_argument(
+        "--held-out",
+        default=None,
+        help=(
+            "Optional genuine held-out JSON/JSONL. Required for an inferential "
+            "member-vs-nonmember real-record test; without it, real-record "
+            "scores are descriptive ranking only."
+        ),
+    )
+    audit.add_argument(
+        "--profile",
+        default=None,
+        choices=["smoke", "routine", "powered"],
+        help=(
+            "Named audit profile. smoke refuses a TPR@FPR headline; "
+            "routine is the moderate default shape; powered requires "
+            "calibration stability. When omitted, inferred from counts."
+        ),
+    )
+    audit.add_argument(
+        "--target-fpr",
+        dest="target_fpr",
+        type=float,
+        default=None,
+        help="Override the profile FPR used to calibrate the membership threshold (default 0.01).",
+    )
+    audit.add_argument(
+        "--scorer",
+        default=None,
+        help=(
+            "Membership scorer backend (default: min_k_plus_plus). "
+            "Built-in name or import path package.module:Class. "
+            "Calibration, CI, and TPR@FPR stay in orchestration."
+        ),
+    )
     audit.add_argument(
         "--ref",
         default="auto",

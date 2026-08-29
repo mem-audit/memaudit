@@ -27,7 +27,17 @@ class MemorizationAuditCallback(TrainerCallback):
     manifest
         JSON-serializable dict returned by ``inject()``.
     real_sample
-        How many real training records to score for the set-level module.
+        How many real training records to score for ranking / (when
+        ``held_out=`` is supplied) the set-level comparison.
+    held_out
+        Optional genuine held-out / non-member population. Required for an
+        inferential member-vs-nonmember test. Without it, real-record scores
+        are descriptive ranking only.
+    profile
+        Optional named audit profile (``smoke`` / ``routine`` / ``powered``).
+    scorer
+        Optional membership backend (name, ``module:Class``, or instance).
+        Default Min-K%++.
     output_dir
         Defaults to ``TrainingArguments.output_dir``.
     """
@@ -42,6 +52,10 @@ class MemorizationAuditCallback(TrainerCallback):
         skip_generation: bool = False,
         seeds: Any | None = None,
         release_context: str | None = None,
+        held_out: Any | None = None,
+        profile: str | None = None,
+        target_fpr: float | None = None,
+        scorer: str | Any | None = None,
     ) -> None:
         if trainer is None:
             raise MemauditConfigError(
@@ -58,6 +72,10 @@ class MemorizationAuditCallback(TrainerCallback):
         self.skip_generation = skip_generation
         self.seeds = list(seeds) if seeds is not None else None
         self.release_context = release_context
+        self.held_out = held_out
+        self.profile = profile
+        self.target_fpr = target_fpr
+        self.scorer = scorer
         self.preflight: dict[str, Any] | None = None
         self.report: dict[str, Any] | None = None
         self._artifacts_written = False
@@ -149,6 +167,10 @@ class MemorizationAuditCallback(TrainerCallback):
             trainer=self.trainer,
             seeds=self.seeds,
             release_context=self.release_context,
+            held_out=self.held_out,
+            profile=self.profile,
+            target_fpr=self.target_fpr,
+            scorer=self.scorer,
         )
         logger.info("wrote %s", report_path)
         print(f"[memaudit] wrote {report_path}")

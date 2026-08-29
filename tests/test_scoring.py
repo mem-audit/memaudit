@@ -81,3 +81,15 @@ def test_score_sequence_secret_span_not_full(tiny_model, tokenizer):
     assert full["n_scored_tokens"] > secret["n_scored_tokens"]
     assert secret["n_scored_tokens"] == 12  # positions 20..31
     assert full["masked_nll"] == full["masked_nll"]  # not NaN
+
+
+def test_extract_token_signals_matches_score_sequence(tiny_model):
+    from memaudit.scoring import extract_token_signals, scores_from_signals
+
+    ids = list(range(4, 36))
+    sig = extract_token_signals(tiny_model.eval(), ids, span=(20, 32))
+    reduced = scores_from_signals(sig)
+    scored = score_sequence(tiny_model.eval(), ids, span=(20, 32))
+    assert sig.n_scored_tokens == scored["n_scored_tokens"] == 12
+    assert sig.argmax_correct.shape == (12,)
+    assert reduced["min_k_plus_plus"] == pytest.approx(scored["min_k_plus_plus"])

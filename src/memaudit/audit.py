@@ -11,26 +11,46 @@ from typing import Any
 
 import numpy as np
 
+from memaudit.canaries import actual_generator_of, requested_family_of
 from memaudit.compliance import normalize_release_context
 from memaudit.constants import (
     DEFAULT_MIN_K_PCT,
     DEFAULT_PREFIX_FRACTIONS,
     DEFAULT_REAL_SAMPLE,
+    DEFAULT_TARGET_FPR,
     HEADLINE_ATTACK,
     HEADLINE_ATTACK_FALLBACK,
     MIN_CONTROLS_FOR_TPR_AT_1PCT,
+    resolve_audit_profile,
 )
 from memaudit.exceptions import MemauditAuditError, MemauditConfigError
 from memaudit.injection import canary_record
-from memaudit.preflight import adapter_toggle_safe, inspect_embeddings
+from memaudit.peft_semantics import (
+    base_equivalence_guard,
+    default_probe_texts,
+    quantization_ref_mismatch,
+    unusual_peft_triggers,
+)
+from memaudit.preflight import absent_preflight, adapter_toggle_safe, inspect_embeddings
 from memaudit.report import build_report, sidecar_path, write_report
+from memaudit.scorers import resolve_scorer, scorer_provenance
+from memaudit.scorers.min_k import DEFAULT_SCORER_NAME
+from memaudit.scorers.signals import SignalsCache, TokenSignals
 from memaudit.scoring import (
     combine_ft_ref,
+    extract_token_signals,
     generate_canary_completions,
     locate_secret_span,
-    score_sequence,
+    scores_from_signals,
 )
-from memaudit.stats import roc_auc, roc_points, tpr_at_fpr, welch_ttest
+from memaudit.stats import (
+    bootstrap_calibration_stability,
+    membership_by_repetition,
+    roc_auc,
+    roc_points,
+    tpr_at_fpr,
+    welch_ttest,
+)
 from memaudit.utils import (
     dataset_fingerprint,
     dataset_length,
@@ -91,14 +111,11 @@ def _eval_guard(model: Any):
     return _Guard()
 
 
-def _score_canary_record(
-    model: Any,
+def _canary_ids_and_span(
     tokenizer: Any,
     canary: Mapping[str, Any],
     fmt: str,
-    min_k_pct: float,
-    skip_first: bool,
-) -> dict[str, float]:
+) -> tuple[list[int], tuple[int, int]]:
     from memaudit.types import Canary
 
     rec = canary_record(Canary.from_dict(dict(canary)), fmt)
@@ -108,27 +125,65 @@ def _score_canary_record(
     )
     if span is None:
         span = (0, len(ids))
-    return score_sequence(model, ids, span=span, min_k_pct=min_k_pct, skip_first_record_token=skip_first)
+    return ids, span
 
 
-def _toggle_or_score_ref(
+def _extract_canary_signals(
     model: Any,
-    score_fn,
+    tokenizer: Any,
+    canary: Mapping[str, Any],
+    fmt: str,
+    skip_first: bool,
+    cache: SignalsCache | None = None,
+    cache_tag: str = "",
+) -> TokenSignals:
+    ids, span = _canary_ids_and_span(tokenizer, canary, fmt)
+    return extract_token_signals(
+        model,
+        ids,
+        span=span,
+        skip_first_record_token=skip_first,
+        cache=cache,
+        cache_tag=cache_tag,
+    )
+
+
+def _toggle_or_extract_ref(
+    model: Any,
+    extract_fn,
     *,
     ref_model: Any | None,
     toggle_safe: bool,
-) -> tuple[dict[str, float], dict[str, float] | None, str]:
-    ft = score_fn(model)
+) -> tuple[TokenSignals, TokenSignals | None, str]:
+    """``extract_fn(model, cache_tag)`` — tag distinguishes disable_adapter state."""
+    ft = extract_fn(model, "target")
     if toggle_safe and hasattr(model, "disable_adapter"):
         try:
             with model.disable_adapter():
-                ref = score_fn(model)
+                ref = extract_fn(model, "disable_adapter")
             return ft, ref, "disable_adapter"
         except Exception:
             pass
     if ref_model is not None:
-        return ft, score_fn(ref_model), "separate_reference"
+        return ft, extract_fn(ref_model, "separate_reference"), "separate_reference"
     return ft, None, "target_only"
+
+
+def _combine_with_scorer(
+    scorer: Any,
+    target: TokenSignals,
+    reference: TokenSignals | None,
+    min_k_pct: float,
+) -> dict[str, float]:
+    """Diagnostic dict from signals + headline from the plugged-in scorer."""
+    ft = scores_from_signals(target, min_k_pct)
+    ref = scores_from_signals(reference, min_k_pct) if reference is not None else None
+    combined = combine_ft_ref(ft, ref)
+    combined["headline_score"] = float(scorer.score(target, reference))
+    name = getattr(scorer, "name", None)
+    if name and name not in {DEFAULT_SCORER_NAME, HEADLINE_ATTACK}:
+        combined["headline_attack_used"] = str(name)
+    return combined
 
 
 def _load_ref_auto(model: Any, ref: Any) -> tuple[Any | None, dict[str, Any]]:
@@ -168,7 +223,7 @@ def _sample_real_texts(
     n: int,
     seed: int,
     held_out: Any | None,
-) -> tuple[list[str], list[str], float]:
+) -> tuple[list[str], list[str], float, str]:
     fmt = manifest.get("fmt") or "text"
     secrets = {c.get("secret") for c in manifest.get("canaries") or [] if c.get("secret")}
     texts: list[str] = []
@@ -186,6 +241,7 @@ def _sample_real_texts(
             idx = rng.choice(len(texts), size=n, replace=False)
             texts = [texts[int(i)] for i in idx]
     held: list[str] = []
+    comparison_population = "none"
     if held_out is not None:
         for row in iter_examples(held_out):
             blob = example_text(row, fmt)
@@ -194,12 +250,14 @@ def _sample_real_texts(
         if len(held) > n:
             idx = rng.choice(len(held), size=n, replace=False)
             held = [held[int(i)] for i in idx]
+        comparison_population = "held_out"
     elif len(texts) >= 4:
-        # split the sample so we still have a control side
+        # split sampled training records — this is not a held-out population
         cut = max(1, len(texts) // 2)
         held = texts[cut:]
         texts = texts[:cut]
-    return texts, held, float(exact_dup)
+        comparison_population = "training_split"
+    return texts, held, float(exact_dup), comparison_population
 
 
 def run_audit(
@@ -222,6 +280,9 @@ def run_audit(
     release_context: str | None = None,
     dataset_path: str | Path | None = None,
     model_path: str | Path | None = None,
+    profile: str | None = None,
+    target_fpr: float | None = None,
+    scorer: str | Any | None = None,
 ) -> dict[str, Any]:
     """Run both verdicts: membership (likelihood MIA) and regurgitation (generation).
 
@@ -236,6 +297,14 @@ def run_audit(
 
     ``release_context`` is the user's EDPB para 46 declaration
     (``public-api`` | ``internal`` | ``open-weights``; default ``unspecified``).
+
+    ``profile`` is a named audit profile (``smoke`` / ``routine`` / ``powered``).
+    When omitted, the name is inferred from manifest counts or stamped
+    ``manifest['audit_profile']``. ``target_fpr`` overrides the profile FPR
+    (default 0.01). The ``smoke`` profile refuses a TPR@FPR headline.
+
+    ``scorer`` selects the membership backend (name, ``module:Class`` path, or
+    instance). Default is Min-K%++. Calibration / TPR / CI stay here.
     """
     if isinstance(manifest, (str, Path)):
         from memaudit.utils import load_json
@@ -260,7 +329,43 @@ def run_audit(
     canaries = list(manifest.get("canaries") or [])
     members = [c for c in canaries if c.get("included")]
     controls = [c for c in canaries if not c.get("included")]
+    requested_members = manifest.get("n_candidates")
+    if requested_members is None:
+        requested_members = sum(1 for c in canaries if c.get("role") != "control")
+    repetition_grid = sorted({int(c.get("repetitions") or 1) for c in members}) if members else []
+    profile_name = profile or manifest.get("audit_profile")
+    if not profile_name:
+        for c in canaries:
+            stamped = (c.get("metadata") or {}).get("audit_profile")
+            if stamped:
+                profile_name = stamped
+                break
+    try:
+        profile_spec = resolve_audit_profile(
+            profile_name,
+            requested_members=int(requested_members) if requested_members is not None else None,
+            n_controls=len(controls),
+            repetitions=repetition_grid,
+            target_fpr=target_fpr,
+        )
+    except KeyError as exc:
+        raise MemauditConfigError(
+            f"Unknown audit profile {profile_name!r}. Use smoke, routine, or powered."
+        ) from exc
+    fpr = float(profile_spec.get("target_fpr") or DEFAULT_TARGET_FPR)
+    try:
+        scorer_obj = resolve_scorer(scorer, min_k_pct=min_k_pct)
+    except MemauditConfigError:
+        raise
+    except Exception as exc:
+        raise MemauditConfigError(
+            f"could not load membership scorer {scorer!r}: {exc}"
+        ) from exc
+    scorer_block = scorer_provenance(scorer_obj)
+    custom_scorer = scorer_block["name"] not in {DEFAULT_SCORER_NAME, HEADLINE_ATTACK}
     audit_warnings: list[str] = []
+    used_headline = HEADLINE_ATTACK if not custom_scorer else str(scorer_block["name"])
+    signals_cache = SignalsCache()
     if not controls:
         audit_warnings.append(
             "Manifest has no held-out controls. TPR@1% FPR is unidentified; "
@@ -270,10 +375,32 @@ def run_audit(
     emb = inspect_embeddings(model)
     toggle_ok, toggle_reason = adapter_toggle_safe(emb)
     ref_model, ref_meta = _load_ref_auto(model, ref)
+    use_toggle = False
+    if emb.get("quantized") and ref_model is not None:
+        q_mismatch, q_msg = quantization_ref_mismatch(emb, ref_model)
+        if q_mismatch:
+            audit_warnings.append(q_msg or "quantized target vs full-precision --ref")
+            ref_meta["quantization_mismatch"] = True
+            ref_meta["downgraded_from"] = ref_meta.get("mode")
+            if toggle_ok and is_peft_model(model) and hasattr(model, "disable_adapter"):
+                ref_model = None
+                ref_meta["mode"] = "disable_adapter"
+                ref_meta["identity"] = {"via": "peft.disable_adapter()", "reason": "quantization_mismatch"}
+                use_toggle = True
+            else:
+                ref_model = None
+                ref_meta["mode"] = "target_only"
+                used_headline = HEADLINE_ATTACK_FALLBACK
+                audit_warnings.append(
+                    "Quantization mismatch: discarded the full-precision --ref and "
+                    "fell back to target-only scoring (headline downgraded)."
+                )
+                toggle_ok = False
     if ref == "auto":
         if toggle_ok and is_peft_model(model):
             ref_meta["mode"] = "disable_adapter"
             ref_meta["identity"] = {"via": "peft.disable_adapter()"}
+            use_toggle = True
         else:
             why = toggle_reason or "model is not an unmerged PEFT adapter"
             raise MemauditConfigError(
@@ -287,14 +414,91 @@ def run_audit(
             "Reference is none: headline is target-only Min-K%++ "
             "(not base-calibrated). This is a weaker attack than the pre-declared headline."
         )
+    elif use_toggle:
+        pass
+
+    preflight_block = (
+        dict(preflight_findings) if preflight_findings is not None else absent_preflight()
+    )
+    if preflight_findings is not None:
+        preflight_block.setdefault("ran", True)
+        preflight_block.setdefault("path", "callback")
+    # Strip in-memory logit tensors from the report; keep metadata.
+    capture = preflight_block.pop("base_equivalence_capture", None)
+    if use_toggle and is_peft_model(model) and hasattr(model, "disable_adapter"):
+        guard = base_equivalence_guard(
+            model,
+            tokenizer,
+            captured=capture,
+            manifest=manifest,
+            probe_texts=default_probe_texts(manifest),
+        )
+        triggers = unusual_peft_triggers(emb)
+        guard["unusual_triggers"] = triggers
+        preflight_block["base_equivalence"] = dict(guard)
+        if guard.get("verdict") == "fail" and triggers:
+            raise MemauditConfigError(
+                "--ref auto is not available (base-equivalence guard failed under "
+                f"unusual PEFT config {triggers}: verdict={guard.get('verdict')}, "
+                f"max_abs_logit_diff={guard.get('max_abs_logit_diff')}, "
+                f"restored={guard.get('restored')}). "
+                "Pass --ref <path-to-base-checkpoint> for base-calibrated Min-K%++, "
+                "or --ref none to accept target-only scoring "
+                "(headline downgraded to min_k_plus_plus and labeled as such)."
+            )
+        if guard.get("verdict") == "fail":
+            use_toggle = False
+            toggle_ok = False
+            if ref_model is not None:
+                ref_meta["mode"] = "separate_reference"
+                ref_meta["downgraded_from"] = "disable_adapter"
+            else:
+                used_headline = HEADLINE_ATTACK_FALLBACK
+                ref_meta["mode"] = "target_only"
+                ref_meta["downgraded_from"] = "disable_adapter"
+            audit_warnings.append(
+                "base-equivalence guard failed; disable_adapter() scoring is "
+                "downgraded (headline may fall back to target-only Min-K%++)."
+            )
+        elif guard.get("verdict") == "warn":
+            audit_warnings.append(
+                "base-equivalence guard: disabled logits differ from the "
+                f"preflight capture by {guard.get('max_abs_logit_diff')} "
+                f"(≤ {guard.get('atol_warn')} WARN headroom)."
+            )
+        if guard.get("adapter_active") is False:
+            audit_warnings.append(
+                "Adapter appears inert (enabled logits == disabled). "
+                "The audit may measure the base model twice and report zero leak "
+                "with false confidence."
+            )
+    if getattr(scorer_obj, "requires_reference", False) and not (
+        use_toggle or ref_model is not None
+    ):
+        audit_warnings.append(
+            f"Scorer {scorer_block['name']} declares requires_reference=True but "
+            "no reference is available; score() will receive reference=None."
+        )
+    ev_by_id = {
+        ev.get("id"): ev
+        for ev in (preflight_block.get("per_canary") or (preflight_block.get("survival") or {}).get("per_canary") or [])
+        if isinstance(ev, dict)
+    }
 
     per_canary: list[dict[str, Any]] = []
     member_scores: list[float] = []
     control_scores: list[float] = []
-    used_headline = HEADLINE_ATTACK
 
-    def score_one(m, canary):
-        return _score_canary_record(m, tokenizer, canary, fmt, min_k_pct, skip_first_packed_token)
+    def extract_one(m, canary, cache_tag=""):
+        return _extract_canary_signals(
+            m,
+            tokenizer,
+            canary,
+            fmt,
+            skip_first_packed_token,
+            cache=signals_cache,
+            cache_tag=cache_tag,
+        )
 
     with _eval_guard(model):
         if ref_model is not None:
@@ -303,14 +507,14 @@ def run_audit(
         for i, canary in enumerate(canaries):
             if n_total >= 8 and (i == 0 or (i + 1) % 10 == 0 or i + 1 == n_total):
                 log.info("scoring canary %s/%s id=%s", i + 1, n_total, canary.get("id"))
-            ft, ref_s, how = _toggle_or_score_ref(
+            ft_sig, ref_sig, how = _toggle_or_extract_ref(
                 model,
-                lambda m, c=canary: score_one(m, c),
+                lambda m, tag="", c=canary: extract_one(m, c, cache_tag=tag),
                 ref_model=ref_model,
-                toggle_safe=toggle_ok and ref == "auto" and is_peft_model(model),
+                toggle_safe=use_toggle and is_peft_model(model),
             )
-            combined = combine_ft_ref(ft, ref_s)
-            if combined.get("headline_attack_used") != HEADLINE_ATTACK:
+            combined = _combine_with_scorer(scorer_obj, ft_sig, ref_sig, min_k_pct)
+            if not custom_scorer and combined.get("headline_attack_used") != HEADLINE_ATTACK:
                 used_headline = HEADLINE_ATTACK_FALLBACK
             gen_block: dict[str, Any] = {"skipped": True}
             if not skip_generation:
@@ -321,12 +525,15 @@ def run_audit(
                     canary.get("secret_token_ids") or [],
                     prefix_fractions=prefix_fractions,
                 )
+            ev = ev_by_id.get(canary.get("id")) or {}
             row = {
                 "id": canary.get("id"),
                 "role": canary.get("role"),
                 "included": bool(canary.get("included")),
                 "repetitions": canary.get("repetitions"),
                 "family": canary.get("family"),
+                "requested_family": requested_family_of(canary),
+                "actual_generator": actual_generator_of(canary),
                 "scores": {k: v for k, v in combined.items() if k != "headline_attack_used"},
                 "ref_source": how,
                 "regurgitation": {
@@ -337,6 +544,16 @@ def run_audit(
                     ],
                 },
             }
+            if ev:
+                row["evidence_level"] = ev.get("evidence_level")
+                row["record_observed"] = ev.get("record_observed")
+                row["secret_token_aligned"] = ev.get("secret_token_aligned")
+                row["loss_mask_checked"] = ev.get("loss_mask_checked")
+                row["directly_supervised"] = ev.get("directly_supervised")
+                row["verification_unknown"] = ev.get("verification_unknown")
+            elif not preflight_block.get("ran"):
+                row["evidence_level"] = "verification_unknown"
+                row["verification_unknown"] = True
             per_canary.append(row)
             score = combined.get("headline_score", float("nan"))
             if canary.get("included"):
@@ -347,9 +564,21 @@ def run_audit(
     # drop NaNs for stats
     member_scores = [s for s in member_scores if s == s]
     control_scores = [s for s in control_scores if s == s]
-    det = tpr_at_fpr(member_scores, control_scores, fpr=0.01)
+    det = tpr_at_fpr(member_scores, control_scores, fpr=fpr)
     auc = roc_auc(member_scores, control_scores)
     roc = roc_points(member_scores, control_scores)
+    if profile_spec.get("refuse_headline"):
+        det = dict(det)
+        det["headline_valid"] = False
+        refuse_note = (
+            f"audit_profile={profile_spec['name']} is exploratory integration "
+            "sanity; TPR@FPR headline is refused by contract (not an identified "
+            "operating point)."
+        )
+        det["warning"] = (
+            f"{refuse_note} {det['warning']}" if det.get("warning") else refuse_note
+        )
+        audit_warnings.append(refuse_note)
 
     # regurgitation rates
     by_tier: dict[str, dict[str, Any]] = {}
@@ -373,21 +602,39 @@ def run_audit(
 
     def _headline_score_for_text(text: str) -> float:
         ids, span = locate_secret_span(tokenizer, text, text, None)
-        ft = score_sequence(model, ids, span=span or (0, len(ids)), min_k_pct=min_k_pct)
-        ref_s = None
-        if toggle_ok and ref == "auto" and is_peft_model(model) and hasattr(model, "disable_adapter"):
+        span = span or (0, len(ids))
+        ft_sig = extract_token_signals(
+            model,
+            ids,
+            span=span,
+            cache=signals_cache,
+            cache_tag="target",
+        )
+        ref_sig = None
+        if use_toggle and is_peft_model(model) and hasattr(model, "disable_adapter"):
             try:
                 with model.disable_adapter():
-                    ref_s = score_sequence(model, ids, span=span or (0, len(ids)), min_k_pct=min_k_pct)
+                    ref_sig = extract_token_signals(
+                        model,
+                        ids,
+                        span=span,
+                        cache=signals_cache,
+                        cache_tag="disable_adapter",
+                    )
             except Exception:
-                ref_s = None
+                ref_sig = None
         elif ref_model is not None:
-            ref_s = score_sequence(ref_model, ids, span=span or (0, len(ids)), min_k_pct=min_k_pct)
-        comb = combine_ft_ref(ft, ref_s)
-        return float(comb.get("headline_score", float("nan")))
+            ref_sig = extract_token_signals(
+                ref_model,
+                ids,
+                span=span,
+                cache=signals_cache,
+                cache_tag="separate_reference",
+            )
+        return float(scorer_obj.score(ft_sig, ref_sig))
 
     def _real_block_for_seed(sample_seed: int, collect_ranked: bool) -> dict[str, Any]:
-        real_texts, held_texts, dup_rate = _sample_real_texts(
+        real_texts, held_texts, dup_rate, comparison_population = _sample_real_texts(
             dataset, manifest, int(real_sample), int(sample_seed), held_out
         )
         real_scores: list[float] = []
@@ -407,15 +654,63 @@ def run_audit(
         real_scores = [s for s in real_scores if s == s]
         held_scores = [s for s in held_scores if s == s]
         ranked.sort(key=lambda x: (x.get("score") is None, -(x.get("score") or 0)))
+        if comparison_population == "held_out" and len(real_scores) >= 2 and len(held_scores) >= 2:
+            set_level = welch_ttest(real_scores, held_scores)
+            set_level["kind"] = "inferential_member_vs_nonmember"
+            set_level["inferential"] = True
+            set_level["note"] = (
+                "Set-level comparison against a user-supplied held-out "
+                "population. Exploratory at the set level; not evidence about "
+                "any individual record; not a membership finding for any one row."
+            )
+        elif comparison_population == "held_out":
+            set_level = {
+                "kind": "inferential_member_vs_nonmember",
+                "inferential": False,
+                "p_value": None,
+                "note": (
+                    "Genuine held-out population was supplied but a set-level "
+                    "test needs >=2 scores on each side."
+                ),
+            }
+        elif comparison_population == "training_split":
+            set_level = {
+                "kind": "descriptive_ranking_only",
+                "inferential": False,
+                "p_value": None,
+                "n_ranked": len(real_scores),
+                "n_comparison_split": len(held_scores),
+                "mean_score_train_sample": (
+                    float(np.mean(real_scores)) if real_scores else float("nan")
+                ),
+                "mean_score_comparison_split": (
+                    float(np.mean(held_scores)) if held_scores else float("nan")
+                ),
+                "note": (
+                    "No genuine held-out population was supplied. Scores are "
+                    "exploratory, descriptive ranking of a training-split sample "
+                    "(comparison_population=training_split). Not a "
+                    "member-vs-nonmember test; no FPR is attached; not evidence "
+                    "about any individual record."
+                ),
+            }
+        else:
+            set_level = {
+                "kind": "skipped",
+                "inferential": False,
+                "p_value": None,
+                "note": (
+                    "No comparison-split real records; ranking only. Not a "
+                    "member-vs-nonmember test."
+                ),
+            }
         block: dict[str, Any] = {
             "sample_seed": int(sample_seed),
             "n_train_sampled": len(real_texts),
-            "n_held_out": len(held_texts),
+            "n_comparison_split": len(held_texts),
+            "comparison_population": comparison_population,
             "exact_dup_rate": dup_rate,
-            "set_level": welch_ttest(real_scores, held_scores) if held_scores else {
-                "note": "no held-out real records; set-level test skipped",
-                "p_value": None,
-            },
+            "set_level": set_level,
         }
         if collect_ranked:
             block["ranked"] = ranked[: min(50, len(ranked))]
@@ -456,7 +751,7 @@ def run_audit(
                 boot = [float(x) for x in rng.choice(np.asarray(control_scores), size=len(control_scores), replace=True)]
             else:
                 boot = []
-            d = tpr_at_fpr(member_scores, boot, fpr=0.01)
+            d = tpr_at_fpr(member_scores, boot, fpr=fpr)
             per_seed.append(
                 {
                     "seed": int(s),
@@ -496,14 +791,40 @@ def run_audit(
         }
 
     headline_valid = bool(det.get("headline_valid"))
+    cal_seed = seed_list[0] if seed_list else int(manifest.get("seed") or 0)
+    calibration_stability = bootstrap_calibration_stability(
+        member_scores,
+        control_scores,
+        fpr=fpr,
+        seed=cal_seed,
+    )
+    by_rep = membership_by_repetition(
+        per_canary,
+        float(det["threshold"]) if det["threshold"] == det["threshold"] else float("nan"),
+        pooled_n_detected=int(det["n_detected"]),
+        pooled_n_members=int(det["n_members"]),
+        pooled_tpr=det["tpr"],
+        pooled_ci=(det["ci_low"], det["ci_high"]),
+    )
+    detection_claim = None
+    if headline_valid:
+        detection_claim = (
+            f"{det['n_detected']}/{det['n_members']} detected at estimated "
+            f"FPR ≤ {fpr:g} by construction"
+        )
     membership = {
         "headline_attack": used_headline,
         "predeclared_headline": HEADLINE_ATTACK,
-        # Refuse a fake precise TPR@1%FPR when the control set cannot identify it.
-        "tpr_at_1pct_fpr": det["tpr"] if headline_valid else None,
+        "scorer": scorer_block,
+        # Refuse a fake precise TPR@FPR when the control set cannot identify it
+        # or the profile (smoke) forbids a headline.
+        "tpr_at_1pct_fpr": det["tpr"] if headline_valid and abs(fpr - 0.01) < 1e-12 else None,
+        "tpr_at_target_fpr": det["tpr"] if headline_valid else None,
         "ci_low": det["ci_low"] if headline_valid else None,
         "ci_high": det["ci_high"] if headline_valid else None,
         "headline_valid": headline_valid,
+        "target_fpr": fpr,
+        "detection_claim": detection_claim,
         "exploratory_tpr": det["tpr"],
         "exploratory_ci_low": det["ci_low"],
         "exploratory_ci_high": det["ci_high"],
@@ -517,10 +838,42 @@ def run_audit(
         "warning": det.get("warning"),
         "roc": roc,
         "score_orientation": "higher = more member-like",
+        "by_repetition": by_rep,
+        "calibration_stability": calibration_stability,
     }
+    n_exact = 0
+    for row, canary in zip(per_canary, canaries):
+        if not canary.get("included"):
+            continue
+        by_prefix = (row.get("regurgitation") or {}).get("by_prefix") or []
+        if any(bool(p.get("exact")) for p in by_prefix):
+            n_exact += 1
+    n_reg_members = len(overall_flags)
+    exact_wording = (
+        f"{n_exact}/{n_reg_members} under this prefix/decoding/exact-match protocol"
+        if n_reg_members
+        else "generation skipped or no inserted members"
+    )
     regurgitation = {
+        "prefix_policy": {
+            "kind": "secret_prefix_fractions",
+            "fractions": list(prefix_fractions),
+        },
+        "decoding": {
+            "strategy": "greedy",
+            "do_sample": False,
+            "temperature": None,
+            "method": "greedy prefix-prompt completion",
+        },
+        "match_rule": "exact",
+        "detected": {
+            "n": n_reg_members,
+            "n_detected": n_exact,
+            "rate": float(n_exact / n_reg_members) if n_reg_members else float("nan"),
+            "wording": exact_wording,
+        },
         "overall": {
-            "n": len(overall_flags),
+            "n": n_reg_members,
             "n_regurgitated": int(sum(overall_flags)) if overall_flags else 0,
             "rate": overall_rate,
         },
@@ -528,8 +881,9 @@ def run_audit(
         "prefix_fractions": list(prefix_fractions),
         "thresholds": {"exact": True, "bleu": 0.75, "ned": 0.10},
         "note": (
-            "1x canaries are MIA-tier only; verbatim regurgitation is not expected "
-            "from a single effective occurrence."
+            f"{exact_wording}. This is not a claim of no extraction risk; "
+            "BLEU/NED flags remain supplementary. 1x canaries are MIA-tier only; "
+            "verbatim regurgitation is not expected from a single effective occurrence."
         ),
     }
     negative_controls = {
@@ -550,23 +904,51 @@ def run_audit(
             "lora_alpha": emb.get("lora_alpha"),
             "bias": emb.get("bias"),
             "modules_to_save": emb.get("modules_to_save"),
+            "trainable_token_indices": emb.get("trainable_token_indices"),
+            "ensure_weight_tying": emb.get("ensure_weight_tying"),
+            "target_parameters": emb.get("target_parameters"),
             "peft_type": emb.get("peft_type"),
             "merged": emb.get("merged"),
+            "quantized": emb.get("quantized"),
+            "embedding_layer_names": emb.get("embedding_layer_names"),
         }
 
     manifest_sha = manifest.get("manifest_hash") or sha256_json(manifest)
-    repetition_grid = sorted({int(c.get("repetitions") or 1) for c in members}) if members else []
     families_used = sorted({str(c.get("family")) for c in canaries if c.get("family")})
+    requested = sorted({requested_family_of(c) for c in canaries if requested_family_of(c)})
+    generators = sorted({actual_generator_of(c) for c in canaries if actual_generator_of(c)})
+    requested_family = requested[0] if len(requested) == 1 else requested
+    actual_generator = generators[0] if len(generators) == 1 else generators
+    audit_profile_block = {
+        "name": profile_spec["name"],
+        "target_fpr": fpr,
+        "exploratory": bool(profile_spec.get("exploratory")),
+        "refuse_headline": bool(profile_spec.get("refuse_headline")),
+        "inferred": bool(profile_spec.get("inferred")),
+        "note": profile_spec.get("note"),
+    }
+    canaries_block = {
+        "requested_family": requested_family,
+        "actual_generator": actual_generator,
+        "repetitions": repetition_grid,
+        "requested_members": int(requested_members) if requested_members is not None else None,
+        "controls": len(controls),
+    }
     audit_scope = {
         "n_canaries_inserted": len(members),
         "n_heldout_controls": len(controls),
+        "requested_members": int(requested_members) if requested_members is not None else None,
         "repetition_grid": repetition_grid,
         "families_used": families_used,
+        "requested_family": requested_family,
+        "actual_generator": actual_generator,
         "include_prob": manifest.get("include_prob"),
         "inject_seed": manifest.get("seed"),
         "audit_seeds": seed_list,
         "dataset_rows_total": dataset_length(dataset) if dataset is not None else None,
         "real_records_sampled": (real_block or {}).get("n_train_sampled"),
+        "audit_profile": audit_profile_block["name"],
+        "target_fpr": fpr,
     }
     resolved_config = {
         "ref": ref if isinstance(ref, str) or ref is None else "provided_object",
@@ -577,9 +959,13 @@ def run_audit(
         "skip_generation": bool(skip_generation),
         "reveal": bool(reveal),
         "skip_first_packed_token": bool(skip_first_packed_token),
-        "fpr_target": 0.01,
+        "fpr_target": fpr,
+        "target_fpr": fpr,
+        "audit_profile": audit_profile_block["name"],
         "min_controls_for_headline": MIN_CONTROLS_FOR_TPR_AT_1PCT,
         "headline_attack_predeclared": HEADLINE_ATTACK,
+        "scorer": scorer_block["name"],
+        "scorer_version": scorer_block["version"],
         "release_context": release_context_norm,
         "seeds": {"inject": manifest.get("seed"), "audit_seeds": seed_list},
         "include_prob": manifest.get("include_prob"),
@@ -622,7 +1008,7 @@ def run_audit(
         regurgitation=regurgitation,
         negative_controls=negative_controls,
         real_records=real_block,
-        preflight=preflight_findings,
+        preflight=preflight_block,
         provenance=provenance,
         per_canary=per_canary,
         extra={
@@ -632,6 +1018,8 @@ def run_audit(
         release_context=release_context_norm,
         audit_scope=audit_scope,
         stability=stability,
+        audit_profile=audit_profile_block,
+        canaries=canaries_block,
     )
     if output_path:
         write_report(report, output_path)

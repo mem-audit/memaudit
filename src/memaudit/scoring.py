@@ -3,6 +3,10 @@
 All membership scores are oriented so that **higher = more member-like**.
 Logits are reduced immediately (chunked log-prob gathering); full-vocab
 tensors are never retained across sequences.
+
+``extract_token_signals`` is the only model-facing membership layer: it
+emits cacheable ``TokenSignals`` (gold logprob, Min-K μ/σ, argmax-correct).
+Headline scores come from a ``MembershipScorer``, not from this module.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from memaudit.constants import BLEU_THRESHOLD, DEFAULT_MIN_K_PCT, NED_THRESHOLD
+from memaudit.scorers.signals import SignalsCache, TokenSignals
 from memaudit.stats import masked_mean_nll, min_k_percent, min_k_plus_plus
 from memaudit.utils import decode_ids, encode_ids, find_subsequence, infer_device
 
@@ -115,6 +120,37 @@ def regurgitation_flags(secret: str, generation: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _token_distribution_stats(logits, target_ids):
+    """Return (gold_logprob, mu, sigma, argmax_correct). Discards full logits.
+
+    ``logits`` is [T, V] predicting ``target_ids`` [T] (already shifted).
+    mu, sigma are the mean/std of the *next-token log-prob distribution*
+    (Zhang et al. Min-K%++). ``argmax_correct`` is per-position top-1 == gold
+    (the extra signal a future EZ-MIA backend needs).
+    """
+    import torch.nn.functional as F
+
+    # chunk over vocab if V is huge so we never hold softmax + logits together
+    # for a wide batch. Here T is already one sequence.
+    log_probs = F.log_softmax(logits.float(), dim=-1)
+    targets = target_ids.long()
+    target_lp = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+    probs = log_probs.exp()
+    mu = (probs * log_probs).sum(dim=-1)
+    second = (probs * log_probs.square()).sum(dim=-1)
+    var = (second - mu.square()).clamp(min=0.0)
+    sigma = var.sqrt()
+    argmax_correct = logits.argmax(dim=-1) == targets
+    out = (
+        target_lp.detach().cpu().numpy(),
+        mu.detach().cpu().numpy(),
+        sigma.detach().cpu().numpy(),
+        argmax_correct.detach().cpu().numpy().astype(bool),
+    )
+    del log_probs, probs, target_lp, mu, second, var, sigma, argmax_correct
+    return out
+
+
 def token_logprob_stats(logits, target_ids):
     """Return (target_logprob, mu, sigma) for each position. Discards full logits.
 
@@ -122,26 +158,14 @@ def token_logprob_stats(logits, target_ids):
     mu, sigma are the mean/std of the *next-token log-prob distribution* at that
     position (Zhang et al. Min-K%++).
     """
-    import torch
-    import torch.nn.functional as F
+    lp, mu, sigma, _correct = _token_distribution_stats(logits, target_ids)
+    return lp, mu, sigma
 
-    # chunk over vocab if V is huge so we never hold softmax + logits together
-    # for a wide batch. Here T is already one sequence.
-    log_probs = F.log_softmax(logits.float(), dim=-1)
-    targets = target_ids.long().unsqueeze(-1)
-    target_lp = log_probs.gather(-1, targets).squeeze(-1)
-    probs = log_probs.exp()
-    mu = (probs * log_probs).sum(dim=-1)
-    second = (probs * log_probs.square()).sum(dim=-1)
-    var = (second - mu.square()).clamp(min=0.0)
-    sigma = var.sqrt()
-    out = (
-        target_lp.detach().cpu().numpy(),
-        mu.detach().cpu().numpy(),
-        sigma.detach().cpu().numpy(),
-    )
-    del log_probs, probs, target_lp, mu, second, var, sigma
-    return out
+
+def token_signals_from_logits(logits, target_ids) -> TokenSignals:
+    """Build ``TokenSignals`` from already-shifted [T, V] logits and [T] targets."""
+    lp, mu, sigma, correct = _token_distribution_stats(logits, target_ids)
+    return TokenSignals(gold_logprob=lp, mu=mu, sigma=sigma, argmax_correct=correct)
 
 
 def secret_target_positions(
@@ -173,6 +197,16 @@ def scores_from_token_stats(
         "min_k_plus_plus": float(min_k_plus_plus(target_lp, mu, sigma, min_k_pct)),
         "n_scored_tokens": int(target_lp.size),
     }
+
+
+def scores_from_signals(
+    signals: TokenSignals,
+    min_k_pct: float = DEFAULT_MIN_K_PCT,
+) -> dict[str, float]:
+    """Diagnostic reductions from cached signals (not the headline scorer)."""
+    return scores_from_token_stats(
+        signals.gold_logprob, signals.mu, signals.sigma, min_k_pct
+    )
 
 
 def combine_ft_ref(ft: dict[str, float], ref: dict[str, float] | None) -> dict[str, float]:
@@ -210,25 +244,30 @@ def combine_ft_ref(ft: dict[str, float], ref: dict[str, float] | None) -> dict[s
     return out
 
 
-def score_sequence(
+def extract_token_signals(
     model: Any,
     input_ids: Sequence[int],
     span: tuple[int, int] | None = None,
-    min_k_pct: float = DEFAULT_MIN_K_PCT,
     skip_first_record_token: bool = True,
-) -> dict[str, float]:
-    """Teacher-forced secret-span scores from one forward pass."""
-    import torch
+    cache: SignalsCache | None = None,
+    cache_tag: str = "",
+) -> TokenSignals:
+    """One teacher-forced pass → cacheable ``TokenSignals`` (the model-facing layer)."""
+    seq_len = len(input_ids)
+    if span is None:
+        span = (0, seq_len)
+    if cache is not None:
+        hit = cache.get(model, input_ids, span, skip_first_record_token, cache_tag)
+        if hit is not None:
+            return hit
 
-    if len(input_ids) < 2:
-        empty = {
-            "masked_nll": float("nan"),
-            "mean_logprob": float("nan"),
-            "min_k": float("nan"),
-            "min_k_plus_plus": float("nan"),
-            "n_scored_tokens": 0,
-        }
-        return empty
+    if seq_len < 2:
+        sig = TokenSignals.empty()
+        if cache is not None:
+            cache.put(model, input_ids, span, skip_first_record_token, sig, cache_tag)
+        return sig
+
+    import torch
 
     device = infer_device(model)
     ids = torch.tensor([list(input_ids)], dtype=torch.long, device=device)
@@ -239,23 +278,47 @@ def score_sequence(
         # logits[i] predicts token i+1
         shift_logits = logits[0, :-1, :]
         shift_targets = ids[0, 1:]
-        full_lp, full_mu, full_sigma = token_logprob_stats(shift_logits, shift_targets)
+        full_lp, full_mu, full_sigma, full_correct = _token_distribution_stats(
+            shift_logits, shift_targets
+        )
     del logits, shift_logits, out
 
-    seq_len = len(input_ids)
-    if span is None:
-        span = (0, seq_len)
     # target position j corresponds to shift index j-1
     targets = secret_target_positions(seq_len, span, skip_first_record_token)
     idxs = [j - 1 for j in targets if 0 <= j - 1 < full_lp.shape[0]]
     if not idxs:
-        return scores_from_token_stats(
-            np.array([], dtype=np.float64),
-            np.array([], dtype=np.float64),
-            np.array([], dtype=np.float64),
-            min_k_pct,
+        sig = TokenSignals.empty()
+    else:
+        sig = TokenSignals(
+            gold_logprob=full_lp[idxs],
+            mu=full_mu[idxs],
+            sigma=full_sigma[idxs],
+            argmax_correct=full_correct[idxs],
         )
-    return scores_from_token_stats(full_lp[idxs], full_mu[idxs], full_sigma[idxs], min_k_pct)
+    if cache is not None:
+        cache.put(model, input_ids, span, skip_first_record_token, sig, cache_tag)
+    return sig
+
+
+def score_sequence(
+    model: Any,
+    input_ids: Sequence[int],
+    span: tuple[int, int] | None = None,
+    min_k_pct: float = DEFAULT_MIN_K_PCT,
+    skip_first_record_token: bool = True,
+    cache: SignalsCache | None = None,
+    cache_tag: str = "",
+) -> dict[str, float]:
+    """Teacher-forced secret-span diagnostic scores from one forward pass."""
+    sig = extract_token_signals(
+        model,
+        input_ids,
+        span=span,
+        skip_first_record_token=skip_first_record_token,
+        cache=cache,
+        cache_tag=cache_tag,
+    )
+    return scores_from_signals(sig, min_k_pct)
 
 
 def locate_secret_span(
