@@ -1,7 +1,7 @@
 # Auditing a TinyLlama + Alpaca LoRA fine-tune with memaudit
 
 **Flagship public example (powered).** Measured 2026-08-30 on Apple M3 Pro (18 GB, MPS).
-Not a compliance certificate. Report schema 1.1.0, tool 0.1.0.
+Not a compliance certificate. Report schema 1.2.0, tool 0.1.0.
 
 Checked-in report: [`examples/alpaca-powered-report.json`](../examples/alpaca-powered-report.json).
 Reproduce: `pip install "memaudit[peft,trl]"` then `python examples/alpaca_case_study.py`.

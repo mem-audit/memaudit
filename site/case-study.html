@@ -96,7 +96,7 @@
 <main>
   <section class="hero" style="border-top:none">
     <div class="wrap">
-      <p class="eyebrow">Flagship · powered n=100 / 200 · measured 2026-08-29 · Apple M3 Pro / MPS</p>
+      <p class="eyebrow">Flagship · powered n=100 / 200 · measured 2026-08-30 · Apple M3 Pro / MPS</p>
       <h1>TinyLlama + Alpaca leaked <em>membership.</em> It did not spit the data back.</h1>
       <p class="lede">
         memaudit plants canaries in a fine-tune and reports membership leakage and regurgitation.
@@ -160,7 +160,7 @@
           <tbody>
             <tr><td>Budget</td><td>0.874% of tokens (22,228 canary / 2,521,431 host) — ≤1% cap, host grown from 5k to 20k</td></tr>
             <tr><td>Hardware</td><td>Apple M3 Pro, 18 GB unified, MPS · Python 3.12.11 · torch 2.7.1 · transformers 4.56.2</td></tr>
-            <tr><td>Wall-clock</td><td>canary gen 1,921 s · train 10,685 s · audit 829 s · wall 3 h 35 min</td></tr>
+            <tr><td>Wall-clock</td><td>load 3 s · data 304 s · canary gen 1,921 s · train 10,685 s · audit 829 s · wall 3 h 35 min (22:19–01:55 IST)</td></tr>
             <tr><td>Method</td><td><code style="font-family:var(--mono);font-size:.86em">base_calibrated_min_k_plus_plus</code> · <code style="font-family:var(--mono);font-size:.86em">reference.mode=disable_adapter</code></td></tr>
             <tr><td>Report</td><td>schema 1.2.0 · tool 0.1.0 · <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-powered-report.json</code></td></tr>
           </tbody>
@@ -197,6 +197,21 @@ python examples/alpaca_case_study.py</pre>
 
   <section>
     <div class="wrap">
+      <div class="kicker"><span class="no">¶</span><span class="label">Appendix · v0.1 uniform_vocab</span></div>
+      <h2>Prior powered run, <em>labeled appendix only.</em></h2>
+      <p class="prose">
+        Measured 2026-08-28 on the same machine. Requested <code style="font-family:var(--mono);font-size:.86em">high_ppl</code>
+        without passing <code style="font-family:var(--mono);font-size:.86em">model=</code> at generation; with no model and no corpus,
+        generation used the <code style="font-family:var(--mono);font-size:.86em">uniform_vocab</code> fallback.
+        TPR@1%FPR <b>0.180</b> (18/100), CI <b>[0.110, 0.269]</b>, AUC <b>0.776</b>, tier curve
+        <b>1x 0/34 · 4x 2/33 · 16x 16/33</b>, budget <b>0.907%</b>, regurgitation 0/100.
+        Report: <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-powered-report-v0.1-uniformvocab.json</code>.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
       <div class="kicker"><span class="no">¶</span><span class="label">Appendix · first look</span></div>
       <h2>The n=12 run is a first look, <em>not the headline.</em></h2>
       <p class="prose">
@@ -217,7 +232,7 @@ python examples/alpaca_case_study.py</pre>
   <div class="wrap">
     <div class="provenance">
       <span><b>report</b> examples/alpaca-powered-report.json</span>
-      <span><b>sha256</b> ce1675c6d93943b7affbcb726b76ffbf25244556d5c74af68e2d88e45df3f348</span>
+      <span><b>sha256</b> a230db5ad4ec63838895964e1931eabfb76b9937737fc6a02d205477ad5873d4</span>
       <span><b>phone-home</b> false</span>
       <span><b>¶</b> evidence, not compliance</span>
       <span><a href="index.html">← back to memaudit</a></span>
