@@ -1,12 +1,12 @@
 # Auditing a TinyLlama + Alpaca LoRA fine-tune with memaudit
 
-**Flagship public example (powered).** Measured 2026-08-28 on Apple M3 Pro (18 GB, MPS).
+**Flagship public example (powered).** Measured 2026-08-30 on Apple M3 Pro (18 GB, MPS).
 Not a compliance certificate. Report schema 1.1.0, tool 0.1.0.
 
 Checked-in report: [`examples/alpaca-powered-report.json`](../examples/alpaca-powered-report.json).
 Reproduce: `pip install "memaudit[peft,trl]"` then `python examples/alpaca_case_study.py`.
 
-A 12-canary first look from 2026-08-27 is in the [appendix](#appendix-first-look-n12). It is not the headline.
+A 12-canary first look from 2026-08-27 is in the [appendix](#appendix-first-look-n12). The prior powered run that used a `uniform_vocab` fallback is in [appendix v0.1](#appendix-v01-uniform_vocab-fallback). Neither is the headline.
 
 ## What we ran
 
@@ -20,37 +20,38 @@ The README API (`generate_canaries` + `inject` + `MemorizationAuditCallback`) on
 | LoRA | r=8, α=16, dropout 0.05, `bias="none"`, targets `q_proj,k_proj,v_proj,o_proj` |
 | Epochs / LR | 1 epoch, 2e-4, cosine, warmup 3% |
 | Batch | 1 × grad-accum 4, `max_length` 256, gradient checkpointing, fp16 weights |
-| Canaries | `generate_canaries(..., n=100, n_controls=200, family="high_ppl", repetitions=(1, 4, 16), seed=0)` |
+| Canaries | `generate_canaries(..., n=100, n_controls=200, family="high_ppl", model=base, repetitions=(1, 4, 16), seed=0)` |
 | Injection | `inject(..., fmt="auto", seed=0, include_prob=1.0)` — powered setting so **100** members land |
 | Inserted / controls | **100** members; **200** dedicated held-out controls |
-| Token budget | **0.907%** of tokens (23,077 canary / 2,521,431 host). 5k rows would have blown the 1% cap; host grown to 20k. |
+| Token budget | **0.874%** of tokens (22,228 canary / 2,521,431 host). 5k rows would have blown the 1% cap; host grown to 20k. |
 | Scoring | `MemorizationAuditCallback(..., real_sample=64, ref="auto")` → `peft.disable_adapter()` |
 | Hardware | Apple M3 Pro, 18 GB unified, MPS, Python 3.12.11, torch 2.7.1 |
 
-Wall-clock: load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h 43 min (05:11–09:54 IST).
+Wall-clock: load 3 s · data 304 s · canary gen 1,921 s · train 10,685 s · audit 829 s · clock 3 h 35 min (22:19–01:55 IST).
 
-`high_ppl` was requested without `model=` (README snippet). With no model and no corpus, generation used the `uniform_vocab` fallback (uniform draws from non-special vocab) — not model-scored high-perplexity canaries and not rare-token unigram. The measured TPR numbers below are unchanged.
+Requested family `high_ppl` with `model=` passed at generation: **300/300** canaries landed in the target perplexity band (`actual_generator=model_scored_high_ppl`). This is model-scored high-perplexity sampling, not the uniform-from-vocab fallback.
 
 ## Headline numbers (from `alpaca-powered-report.json`)
 
 | Field | Measured |
 |---|---|
 | `membership.headline_attack` | `base_calibrated_min_k_plus_plus` |
-| `membership.tpr_at_1pct_fpr` | **0.180** (18/100) |
-| Repetition-tier curve (same threshold) | **1x 0/34**, **4x 2/33**, **16x 16/33** |
-| `membership.ci_low` / `ci_high` | **[0.110, 0.269]** (Clopper–Pearson 95%) |
+| `membership.tpr_at_1pct_fpr` | **0.100** (10/100) |
+| Repetition-tier curve (same threshold) | **1x 0/34**, **4x 1/33**, **16x 9/33** |
+| `membership.ci_low` / `ci_high` | **[0.049, 0.176]** (Clopper–Pearson 95%) |
 | `membership.headline_valid` | `true` |
-| `membership.auc` | **0.776** (secondary) |
-| `membership.n_members` / `n_controls` / `n_detected` | 100 / 200 / 18 |
+| `membership.auc` | **0.837** (secondary) |
+| `membership.n_members` / `n_controls` / `n_detected` | 100 / 200 / 10 |
 | `regurgitation.overall` | **0/100** |
 | `negative_controls.n` | 200 |
 | `negative_controls.regurgitation_rate` | **0.00** |
+| `canaries.actual_generator` | `model_scored_high_ppl` |
 | `reference.mode` | `disable_adapter` |
-| `report_sha256` | `ce1675c6d93943b7affbcb726b76ffbf25244556d5c74af68e2d88e45df3f348` |
+| `report_sha256` | `a230db5ad4ec63838895964e1931eabfb76b9937737fc6a02d205477ad5873d4` |
 
 ## Plain-language takeaway
 
-A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, **did leak membership** at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR **0.180**, 95% CI **[0.110, 0.269]**). Ranking agreed — AUC **0.776**. The same threshold decomposes as **1x 0/34**, **4x 2/33**, **16x 16/33**: the pooled 18% is substantially a duplication/exposure stress signal, not an 18% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
+A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.874% canary budget and model-scored high-perplexity canaries, **did leak membership** at the pre-declared operating point: 10 of 100 inserted canaries were detectable at 1% FPR (TPR **0.100**, 95% CI **[0.049, 0.176]**). Ranking agreed — AUC **0.837**. The same threshold decomposes as **1x 0/34**, **4x 1/33**, **16x 9/33**: the pooled 10% is substantially a duplication/exposure stress signal, not a 10% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
 
 We did not cherry-pick a scarier threshold or drop the CI. If TPR is 0 with a tight interval, that is a sellable result (this LoRA did not leak at 1% FPR). If TPR is high with a tight interval, that is also sellable.
 
@@ -79,6 +80,23 @@ See [`benchmarks/README.md`](../benchmarks/README.md).
 
 This is a 1.1B-class chat model, one epoch, 20,000 Alpaca rows, `max_length` 256, trained on a laptop GPU (Apple MPS). It is not a 7B multi-epoch production SFT. Thresholds are calibrated on this run's held-out controls and do not transfer across model families. The result is evidence under the attack that was run (base-calibrated Min-K%++ on the secret span, plus prefix-prompted regurgitation). It is not a GDPR / AI Act / CNIL determination. Per EDPB Opinion 28/2024 para 55, successful testing is evidence only for the attacks actually run.
 
+## Appendix: v0.1 uniform_vocab fallback
+
+Measured 2026-08-28 on the same machine. The first public powered run requested `high_ppl` without passing `model=` at generation; with no model and no corpus, generation used the `uniform_vocab` fallback (uniform draws from non-special vocab). Report archived as [`examples/alpaca-powered-report-v0.1-uniformvocab.json`](../examples/alpaca-powered-report-v0.1-uniformvocab.json).
+
+| Field | Measured |
+|---|---|
+| TPR @ 1% FPR | **0.180** (18/100) |
+| Repetition-tier curve | **1x 0/34**, **4x 2/33**, **16x 16/33** |
+| 95% CI | **[0.110, 0.269]** |
+| AUC | **0.776** |
+| Regurgitation | **0/100** |
+| Budget | **0.907%** (23,077 / 2,521,431 tokens) |
+| `canaries.actual_generator` | `uniform_vocab` |
+| sha256 | `ce1675c6d93943b7affbcb726b76ffbf25244556d5c74af68e2d88e45df3f348` |
+
+That run is kept as a labeled appendix only. The headline numbers above come from the model-scored rerun.
+
 ## Appendix: first look (n=12)
 
 Measured 2026-08-27 on the same machine. README default `include_prob=0.5` on `n=32` inserted **12** members (120 held-out) into 5,000 Alpaca rows at a 0.388% canary budget. Train 2,205 s / audit 323 s.
@@ -98,6 +116,5 @@ Reproduce the first look (not the default):
 ```bash
 python examples/alpaca_case_study.py --n 32 --n-controls 100 --n-host 5000 \
     --include-prob 0.5 --min-inserted 1 \
-    --report-path examples/alpaca-case-study-report.json \
-    --output-dir examples/out-alpaca-case-study
+    --output examples/alpaca-case-study-report.json
 ```

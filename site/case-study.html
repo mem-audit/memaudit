@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flagship case study — TinyLlama + Alpaca · memaudit</title>
-<meta name="description" content="Powered memaudit run: TinyLlama-1.1B-Chat LoRA on 20,000 Stanford Alpaca rows, 100 canaries / 200 controls, budget 0.907%. TPR@1%FPR 0.180 [0.110, 0.269], AUC 0.776, regurgitation 0/100.">
+<meta name="description" content="Powered memaudit run: TinyLlama-1.1B-Chat LoRA on 20,000 Stanford Alpaca rows, 100 canaries / 200 controls, budget 0.874%, model-scored high_ppl. TPR@1%FPR 0.100 [0.049, 0.176], AUC 0.837, regurgitation 0/100.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23F6F1E7'/%3E%3Ctext x='32' y='46' font-size='44' text-anchor='middle' font-family='Georgia,serif' fill='%23B23A1D'%3E¶%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -96,12 +96,13 @@
 <main>
   <section class="hero" style="border-top:none">
     <div class="wrap">
-      <p class="eyebrow">Flagship · powered n=100 / 200 · measured 2026-08-28 · Apple M3 Pro / MPS</p>
+      <p class="eyebrow">Flagship · powered n=100 / 200 · measured 2026-08-29 · Apple M3 Pro / MPS</p>
       <h1>TinyLlama + Alpaca leaked <em>membership.</em> It did not spit the data back.</h1>
       <p class="lede">
         memaudit plants canaries in a fine-tune and reports membership leakage and regurgitation.
         This page is the sellable run: <strong>TinyLlama-1.1B-Chat</strong>, real Alpaca, LoRA r=8, one epoch,
-        <strong>100 inserted canaries</strong>, <strong>200 held-out controls</strong>, budget <strong>0.907%</strong>.
+        <strong>100 inserted canaries</strong>, <strong>200 held-out controls</strong>, budget <strong>0.874%</strong>,
+        <strong>model-scored high_ppl</strong> canaries.
       </p>
       <div class="cta-row">
         <button class="pipline" data-copy="pip install memaudit">
@@ -112,15 +113,15 @@
       </div>
       <div class="metrics">
         <div class="metric">
-          <div class="big">0.180</div>
-          <div class="lab">Leak rate at 1% FPR · (18/100) · CI95 [0.110, 0.269]</div>
+          <div class="big">0.100</div>
+          <div class="lab">Leak rate at 1% FPR · (10/100) · CI95 [0.049, 0.176]</div>
         </div>
         <div class="metric">
           <div class="big">1x 0/34</div>
-          <div class="lab">Tier curve · 4x 2/33 · 16x 16/33 · pooled 18% is mostly 16x stress</div>
+          <div class="lab">Tier curve · 4x 1/33 · 16x 9/33 · pooled 10% is mostly 16x stress</div>
         </div>
         <div class="metric">
-          <div class="big">0.776</div>
+          <div class="big">0.837</div>
           <div class="lab">Member / control rank · AUC (secondary)</div>
         </div>
         <div class="metric">
@@ -128,7 +129,7 @@
           <div class="lab">Secrets spat back · regurgitation rate</div>
         </div>
       </div>
-      <p class="scale">TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.907% · 20,000 host rows</p>
+      <p class="scale">TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.874% · model-scored high_ppl · 20,000 host rows</p>
     </div>
   </section>
 
@@ -147,8 +148,8 @@
         <code style="font-family:var(--mono);font-size:.86em">n_controls=200</code>,
         <code style="font-family:var(--mono);font-size:.86em">include_prob=1.0</code> so 100 canaries actually land,
         requested family <code style="font-family:var(--mono);font-size:.86em">high_ppl</code>,
-        actual generator <code style="font-family:var(--mono);font-size:.86em">uniform_vocab</code>
-        (no model at generation; uniform-from-vocab, not model-scored high-perplexity),
+        actual generator <code style="font-family:var(--mono);font-size:.86em">model_scored_high_ppl</code>
+        (TinyLlama rejection sampling into the PPL band; 300/300 in band),
         reps {1, 4, 16}.
         Scoring <code style="font-family:var(--mono);font-size:.86em">ref="auto"</code> /
         <code style="font-family:var(--mono);font-size:.86em">disable_adapter()</code>.
@@ -157,11 +158,11 @@
         <table class="maptable">
           <thead><tr><th>Knob</th><th>Value</th></tr></thead>
           <tbody>
-            <tr><td>Budget</td><td>0.907% of tokens (23,077 canary / 2,521,431 host) — ≤1% cap, host grown from 5k to 20k</td></tr>
+            <tr><td>Budget</td><td>0.874% of tokens (22,228 canary / 2,521,431 host) — ≤1% cap, host grown from 5k to 20k</td></tr>
             <tr><td>Hardware</td><td>Apple M3 Pro, 18 GB unified, MPS · Python 3.12.11 · torch 2.7.1 · transformers 4.56.2</td></tr>
-            <tr><td>Wall-clock</td><td>load 6 s · data 304 s · train 10,069 s · audit 655 s · clock 4 h 43 min (05:11–09:54 IST)</td></tr>
+            <tr><td>Wall-clock</td><td>canary gen 1,921 s · train 10,685 s · audit 829 s · wall 3 h 35 min</td></tr>
             <tr><td>Method</td><td><code style="font-family:var(--mono);font-size:.86em">base_calibrated_min_k_plus_plus</code> · <code style="font-family:var(--mono);font-size:.86em">reference.mode=disable_adapter</code></td></tr>
-            <tr><td>Report</td><td>schema 1.1.0 · tool 0.1.0 · <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-powered-report.json</code></td></tr>
+            <tr><td>Report</td><td>schema 1.2.0 · tool 0.1.0 · <code style="font-family:var(--mono);font-size:.86em">examples/alpaca-powered-report.json</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -175,7 +176,7 @@
       <p class="prose">
         <b>Membership</b> asks whether an attacker with logprobs can tell a canary was trained on.
         <b>Regurgitation</b> asks whether the model emits the secret from a prefix. They routinely disagree.
-        A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.907% canary budget, <b>did leak membership</b> at the pre-declared operating point: 18 of 100 inserted canaries were detectable at 1% FPR (TPR <b>0.180</b>, 95% CI <b>[0.110, 0.269]</b>). Ranking agreed — AUC <b>0.776</b>. The same threshold decomposes as <b>1x 0/34</b>, <b>4x 2/33</b>, <b>16x 16/33</b>: the pooled 18% is substantially a duplication/exposure stress signal, not an 18% detection probability for a single-exposure record. The same run was <b>0/100 under this prefix/decoding/exact-match protocol</b> (not a claim of no extraction risk).
+        A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.874% canary budget and model-scored high-perplexity canaries, <b>did leak membership</b> at the pre-declared operating point: 10 of 100 inserted canaries were detectable at 1% FPR (TPR <b>0.100</b>, 95% CI <b>[0.049, 0.176]</b>). Ranking agreed — AUC <b>0.837</b>. The same threshold decomposes as <b>1x 0/34</b>, <b>4x 1/33</b>, <b>16x 9/33</b>: the pooled 10% is substantially a duplication/exposure stress signal, not a 10% detection probability for a single-exposure record. The same run was <b>0/100 under this prefix/decoding/exact-match protocol</b> (not a claim of no extraction risk).
       </p>
       <div class="take">
         n=100 / 200 is the sellable sample. A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) is appendix-only —

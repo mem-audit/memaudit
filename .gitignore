@@ -29,6 +29,7 @@ benchmarks/benchlog.txt
 !examples/memaudit-manifest.json
 !examples/alpaca-case-study-report.json
 !examples/alpaca-powered-report.json
+!examples/alpaca-powered-report-v0.1-uniformvocab.json
 !hf/space/demo-report.json
 
 # Local training junk from the flagship case study (do not commit weights)

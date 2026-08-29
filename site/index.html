@@ -390,12 +390,12 @@
         </p>
         <div class="hero-nums fade d4" id="poweredHero">
           <div class="hero-num">
-            <div class="n">0.180<small> 18/100</small></div>
+            <div class="n">0.100<small> 10/100</small></div>
             <div class="lab">Leak rate at 1% FPR</div>
-            <div class="sub">95% CI [0.110, 0.269]</div>
+            <div class="sub">95% CI [0.049, 0.176]</div>
           </div>
           <div class="hero-num">
-            <div class="n">0.776</div>
+            <div class="n">0.837</div>
             <div class="lab">Member / control rank</div>
             <div class="sub">AUC, secondary</div>
           </div>
@@ -407,13 +407,13 @@
         </div>
         <p class="tier-curve fade d4">
           Repetition-tier curve at the same 1% FPR threshold:
-          <b>1x 0/34</b> (single-exposure) · <b>4x 2/33</b> (moderate) · <b>16x 16/33</b> (high-exposure).
-          The pooled <b>18%</b> is substantially a duplication/exposure stress signal, not an 18% detection
+          <b>1x 0/34</b> (single-exposure) · <b>4x 1/33</b> (moderate) · <b>16x 9/33</b> (high-exposure).
+          The pooled <b>10%</b> is substantially a duplication/exposure stress signal, not a 10% detection
           probability for a single-exposure record.
         </p>
         <p class="hero-scale fade d4">
-          TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.907%
-          · 20,000 host rows · Apple M3 Pro / MPS · 2026-08-28
+          TinyLlama-1.1B-Chat · Alpaca · LoRA r=8 · 1 epoch · 100 canaries / 200 controls · budget 0.874%
+          · model-scored high_ppl · 20,000 host rows · Apple M3 Pro / MPS · 2026-08-29
         </p>
         <div class="cta-row fade d5">
           <button class="pipline" data-copy="pip install memaudit" aria-label="Copy pip install command">
@@ -442,7 +442,7 @@
       <div class="bench-block">
         <div class="bench-head">
           <span class="bench-tag">Measured · n=100 / 200</span>
-          <span class="bench-scale">Honest ≤1% canary budget · Apple MPS · 2026-08-27/28</span>
+          <span class="bench-scale">Honest ≤1% canary budget · Apple MPS · 2026-08-27/30</span>
         </div>
         <div class="tablewrap">
           <table class="benchtbl">
@@ -463,8 +463,18 @@
                 <td>TinyLlama + Alpaca</td>
                 <td>HF Trainer · LoRA r=8 · 1&nbsp;ep · 20k rows</td>
                 <td class="mono"><b>100 / 200</b></td>
+                <td class="mono">0.874%</td>
+                <td class="mono"><b>0.100</b> (10/100)</td>
+                <td class="mono">[0.049, 0.176]</td>
+                <td class="mono">0.837</td>
+                <td class="mono">0/100</td>
+              </tr>
+              <tr>
+                <td>TinyLlama + Alpaca <span style="opacity:.7">(v0.1 appendix)</span></td>
+                <td>same stack · uniform_vocab canaries</td>
+                <td class="mono">100 / 200</td>
                 <td class="mono">0.907%</td>
-                <td class="mono"><b>0.180</b> (18/100)</td>
+                <td class="mono">0.180 (18/100)</td>
                 <td class="mono">[0.110, 0.269]</td>
                 <td class="mono">0.776</td>
                 <td class="mono">0/100</td>
@@ -494,8 +504,9 @@
         </div>
         <p class="bench-note">
           Reproduce the TinyLlama flagship: <code style="font-family:var(--mono);font-size:.85em">python examples/alpaca_case_study.py</code>.
-          Powered canaries: requested family <code style="font-family:var(--mono);font-size:.85em">high_ppl</code>, actual generator <code style="font-family:var(--mono);font-size:.85em">uniform_vocab</code> (no model at generation).
-          Tier curve at the shipped threshold: 1x 0/34, 4x 2/33, 16x 16/33 — the pooled 18% is mostly a 16x exposure-stress signal.
+          Powered canaries: requested family <code style="font-family:var(--mono);font-size:.85em">high_ppl</code>, actual generator <code style="font-family:var(--mono);font-size:.85em">model_scored_high_ppl</code> (TinyLlama rejection sampling).
+          Tier curve at the shipped threshold: 1x 0/34, 4x 1/33, 16x 9/33 — the pooled 10% is mostly a 16x exposure-stress signal.
+          Prior v0.1 run (uniform_vocab fallback, no model at generation): TPR 0.180 [0.110, 0.269].
           Write-up: <a href="case-study.html">case-study.html</a>.
           distilgpt2 rows are the already-measured n=100/200 benches — tight CIs, not hidden.
           A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) is in the case-study appendix; it is not the headline.
@@ -967,7 +978,7 @@ trainer.train()  <span class="c-com"># writes &lt;output_dir&gt;/memaudit-report
         <details class="reveal">
           <summary>What scale was tested?</summary>
           <div class="faq-a">The flagship is TinyLlama-1.1B-Chat + Alpaca LoRA, <b>100 inserted / 200 controls</b>,
-          20,000 host rows, 0.907% canary budget — see the hero and <a href="case-study.html">case study</a>.
+          20,000 host rows, 0.874% canary budget, model-scored high_ppl canaries — see the hero and <a href="case-study.html">case study</a>.
           Also shipped: a TinyDemoLM positive-control (<code>memaudit demo</code>) and pretrained
           <b>distilgpt2 + LoRA</b> n=100/200 (TPR 0.000, CI [0, 0.036]; risky-config AUC 0.848).
           A 12-canary first look exists as an appendix only. Production audits run against <i>your</i> model
