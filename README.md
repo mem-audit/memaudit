@@ -28,29 +28,29 @@ pip install memaudit
 memaudit demo
 ```
 
-[PyPI](https://pypi.org/project/memaudit/) ù extras: `"memaudit[peft]"`, `"memaudit[trl]"`, or `"memaudit[peft,trl]"`. From source: `git clone` then `pip install -e ".[dev,peft,trl]"`.
+[PyPI](https://pypi.org/project/memaudit/) ‚Äî extras: `"memaudit[peft]"`, `"memaudit[trl]"`, or `"memaudit[peft,trl]"`. From source: `git clone` then `pip install -e ".[dev,peft,trl]"`.
 
-## Flagship example ù TinyLlama + Stanford Alpaca (powered)
+## Flagship example ‚Äî TinyLlama + Stanford Alpaca (powered)
 
-This is the public run to click first: TinyLlama-1.1B-Chat, real Alpaca, LoRA r=8, README API, **100 inserted canaries / 200 controls**, honest **0.874%** canary budget, **model-scored `high_ppl` canaries**. Measured 2026-08-30 on Apple M3 Pro (18 GB, MPS). Full write-up: [`docs/case-study-alpaca.md`](docs/case-study-alpaca.md) ù [live site](https://ansh200516.github.io/memaudit-site/).
+This is the public run to click first: TinyLlama-1.1B-Chat, real Alpaca, LoRA r=8, README API, **100 inserted canaries / 200 controls**, honest **0.874%** canary budget, **model-scored `high_ppl` canaries**. Measured 2026-08-30 on Apple M3 Pro (18 GB, MPS). Full write-up: [`docs/case-study-alpaca.md`](docs/case-study-alpaca.md) ‚Äî [live site](https://ansh200516.github.io/memaudit-site/).
 
 | Metric | Measured (`examples/alpaca-powered-report.json`) |
 |---|---|
 | Model / data | TinyLlama-1.1B-Chat-v1.0 + **20,000** `tatsu-lab/alpaca` rows |
-| LoRA / epochs / budget | r=8 on `q,k,v,o_proj` ù 1 epoch ù **0.874%** of tokens (22,228 / 2,521,431) |
-| Canaries | requested `high_ppl` ù actual `model_scored_high_ppl` (300/300 in PPL band) |
+| LoRA / epochs / budget | r=8 on `q,k,v,o_proj` ‚Äî 1 epoch ‚Äî **0.874%** of tokens (22,228 / 2,521,431) |
+| Canaries | requested `high_ppl` ‚Äî actual `model_scored_high_ppl` (300/300 in PPL band) |
 | Inserted / held-out | **100 / 200** (`include_prob=1.0` so n is not a coin flip) |
-| Method | base-calibrated Min-K%++ ù `reference.mode=disable_adapter` |
-| **TPR @ 1% FPR** | **0.100** (10/100) ù 95% CI **[0.049, 0.176]** ù headline valid |
-| Repetition-tier curve (same threshold) | **1x 0/34** ù **4x 1/33** ù **16x 9/33** |
+| Method | base-calibrated Min-K%++ ‚Äî `reference.mode=disable_adapter` |
+| **TPR @ 1% FPR** | **0.100** (10/100) ‚Äî 95% CI **[0.049, 0.176]** ‚Äî headline valid |
+| Repetition-tier curve (same threshold) | **1x 0/34** ‚Äî **4x 1/33** ‚Äî **16x 9/33** |
 | AUC (secondary) | **0.837** |
 | Regurgitation | **0/100** under this prefix/decoding/exact-match protocol |
 | Negative-control regurgitation | **0.00** (n=200) |
-| Train / audit / wall | load 3 s ù data 304 s ù canary gen 1,921 s ù train 10,685 s ù audit 829 s ù wall 3 h 35 min (22:19ù01:55 IST) |
+| Train / audit / wall | load 3 s ‚Äî data 304 s ‚Äî canary gen 1,921 s ‚Äî train 10,685 s ‚Äî audit 829 s ‚Äî wall 3 h 35 min (22:19‚Äî01:55 IST) |
 
-A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.874% canary budget and model-scored high-perplexity canaries, **did leak membership** at the pre-declared operating point: 10 of 100 inserted canaries were detectable at 1% FPR (TPR **0.100**, 95% CI **[0.049, 0.176]**). Ranking agreed ù AUC **0.837**. The same threshold decomposes as **1x 0/34**, **4x 1/33**, **16x 9/33**: the pooled 10% is substantially a duplication/exposure stress signal, not a 10% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
+A one-epoch LoRA (r=8) of TinyLlama-1.1B-Chat on 20,000 real Stanford Alpaca rows, with an honest 0.874% canary budget and model-scored high-perplexity canaries, **did leak membership** at the pre-declared operating point: 10 of 100 inserted canaries were detectable at 1% FPR (TPR **0.100**, 95% CI **[0.049, 0.176]**). Ranking agreed ‚Äî AUC **0.837**. The same threshold decomposes as **1x 0/34**, **4x 1/33**, **16x 9/33**: the pooled 10% is substantially a duplication/exposure stress signal, not a 10% detection probability for a single-exposure record. The same run was **0/100 under this prefix/decoding/exact-match protocol** (not a claim of no extraction risk).
 
-The prior powered run used a `uniform_vocab` fallback (no model at generation): TPR **0.180** (18/100), CI **[0.110, 0.269]**, AUC **0.776** ù archived as [`examples/alpaca-powered-report-v0.1-uniformvocab.json`](examples/alpaca-powered-report-v0.1-uniformvocab.json). A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) lives in `examples/alpaca-case-study-report.json` and the case-study appendix ù not the headline. The already-measured distilgpt2 n=100/200 rows (TPR 0.000 [0, 0.036], risky AUC 0.848) stay in the LoRA benchmark table below.
+The prior powered run used a `uniform_vocab` fallback (no model at generation): TPR **0.180** (18/100), CI **[0.110, 0.269]**, AUC **0.776** ‚Äî archived as [`examples/alpaca-powered-report-v0.1-uniformvocab.json`](examples/alpaca-powered-report-v0.1-uniformvocab.json). A 12-canary first look (TPR 0.500, CI [0.211, 0.789]) lives in `examples/alpaca-case-study-report.json` and the case-study appendix ‚Äî not the headline. The already-measured distilgpt2 n=100/200 rows (TPR 0.000 [0, 0.036], risky AUC 0.848) stay in the LoRA benchmark table below.
 
 ```bash
 pip install "memaudit[peft,trl]"
@@ -59,7 +59,7 @@ python examples/alpaca_case_study.py
 
 ## Measured demo (TinyDemoLM validation)
 
-These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 ù a positive-control run so the instrument can show a clear hit and a clean control side.
+These numbers were produced by `python examples/demo.py` on 2026-08-27 (Apple MPS). The model is a **randomly-initialized 1-block TinyDemoLM** (hidden=64, vocab=256), full fine-tune, seed 0 ‚Äî a positive-control run so the instrument can show a clear hit and a clean control side.
 
 | Metric | Measured value |
 |---|---|
@@ -132,7 +132,7 @@ n=100 is the honest upgrade over n=16: zero detections now cap the true TPR at *
 
 ## TRL SFTTrainer live run (measured)
 
-`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** ù same scale as Run A:
+`benchmarks/run_sft_benchmark.py` runs the full claimed path on a **live `trl.SFTTrainer`** (TRL 0.29.1): prompt/completion dataset, `completion_only_loss=True`, LoRA r=8 on distilgpt2, `inject()` + `MemorizationAuditCallback` end-to-end. Measured 2026-08-27 on Apple MPS, host 10,000 records, canary budget **0.93%** ‚Äî same scale as Run A:
 
 | Metric | SFT live run (1 ep, r=8, lr=2e-4) |
 |---|---|
@@ -313,7 +313,7 @@ Ten landmines encoded in the implementation (source-checked against transformers
 | `unigram` / `bigram` | Least-likely tokens under corpus n-gram counts; uniform-from-vocab if no corpus |
 | `structured` | `CANARY-ID:...` template + random fill (exposure metric later) |
 | `random` | Uniform existing-vocab draws (also used as control twins) |
-| `new_token` | Gated by the PEFT pre-flight ó frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
+| `new_token` | Gated by the PEFT pre-flight ‚Äî frozen embeddings cannot train new-token canaries; memaudit does not resize your vocab |
 
 Defaults: 32 insert-eligible + **100** never-inserted controls (the TPR@1% FPR floor; the `routine` profile shape), 25-64 tokens, repetitions `{1,4,16}`, Bernoulli(1/2) inclusion coins. Named profiles: `smoke` (cheap, refuses the TPR@FPR headline), `routine` (those defaults), `powered` (100/200/{1,4,16}, calibration stability required). Going below 100 controls emits a warning and the report **refuses** the TPR@1% FPR headline unless you asked for `smoke`. The public powered case study stays 100/200/{1,4,16}.
 

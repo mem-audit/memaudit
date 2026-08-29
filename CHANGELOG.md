@@ -2,9 +2,17 @@
 
 ## Unreleased
 
-- Powered flagship case study re-run with genuinely model-scored `high_ppl` canaries (base TinyLlama rejection sampling; `actual_generator=model_scored_high_ppl`, 300/300 in the target perplexity band). Honest **0.874%** budget (22,228 / 2,521,431 tokens). Measured TPR@1%FPR **0.100** (10/100, CI [0.049, 0.176]), AUC 0.837, tier curve 1x 0/34 · 4x 1/33 · 16x 9/33, regurgitation 0/100. Report `examples/alpaca-powered-report.json` (schema 1.2.0). The prior uniform_vocab run is archived as `examples/alpaca-powered-report-v0.1-uniformvocab.json`.
+## 0.2.0 - 2026-08-30
+
+Review-response release: preflight evidence, audit profiles, PEFT matrix, scorer seam, schema 1.2.0.
+
+- Report schema **1.2.0** (additive on 1.1.0): `audit_profile`, `membership.by_repetition`, `membership.calibration_stability`, `membership.scorer`, canary `requested_family` / `actual_generator`, regurgitation protocol fields, real-record inferential-vs-descriptive split.
+- Named audit profiles (`smoke`, `routine`, `powered`) with repetition-tier decomposition and calibration-stability reporting on powered runs.
+- Fail-closed preflight: collator-based label verification, per-canary evidence levels, PEFT adapter-semantics matrix, and live TRL integration tests in both label eras (TRL 0.29.x mask era and TRL >=1.9 labels-column era).
+- Membership scoring routed through a pluggable scorer seam (default `min_k_plus_plus`).
+- Live QLoRA integration tests against a real bitsandbytes 4-bit base.
+- Powered flagship case study re-run with genuinely model-scored `high_ppl` canaries (base TinyLlama rejection sampling; `actual_generator=model_scored_high_ppl`, 300/300 in the target perplexity band). Honest **0.874%** budget (22,228 / 2,521,431 tokens). Measured TPR@1%FPR **0.100** (10/100, CI [0.049, 0.176]), AUC 0.837, tier curve 1x 0/34 · 4x 1/33 · 16x 9/33, regurgitation 0/100. Report `examples/alpaca-powered-report.json`. The prior uniform_vocab run is archived as `examples/alpaca-powered-report-v0.1-uniformvocab.json` (TPR **0.180**, CI [0.110, 0.269]).
 - `high_ppl` canary generation: base model can be passed for real rejection sampling, perplexity scored in float32, per-draw MPS allocator cache release (fixes multi-hour generation stalls on Apple Silicon), and explicit generator provenance (`model_scored_high_ppl` vs `uniform_vocab`).
-- Live TRL integration tests: preflight verdicts asserted against real `SFTTrainer` prepared datasets and collators in both label eras (TRL 0.29.x mask era and TRL >=1.9 labels-column era), plus real-BPE alignment-ladder and chat-template `max_length` pre-check coverage. New fatal: secret present only in raw text columns but missing from the tokenized stream.
 
 ## 0.1.0 - 2026-08-27
 

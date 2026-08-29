@@ -48,4 +48,8 @@ def test_readme_quotes_demo_tpr():
     tpr = obj["membership"]["tpr_at_1pct_fpr"]
     assert f"{tpr:.3f}" in readme or "1.000" in readme
     assert "0.794" in readme
-    assert "python examples/demo.py" in readme
+    assert "python examples/demo.py" in readme or "memaudit demo" in readme
+    # Reorganized README keeps flagship powered + archived appendix numbers.
+    assert "0.100" in readme
+    assert "0.180" in readme
+    assert "uniform_vocab" in readme

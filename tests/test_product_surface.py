@@ -46,9 +46,10 @@ def test_readme_field_names_match_schema():
         "ci_low",
         "ci_high",
         "negative_controls",
-        "1.0.0",
+        "report_sha256",
         "Min-K%",
     ):
         assert token in readme, token
     assert HEADLINE_ATTACK.replace("_", "-") in readme or "Min-K%" in readme
-    assert SCHEMA_VERSION in readme or "1.0.0" in readme
+    assert SCHEMA_VERSION in readme
+    assert "1.0.0" in readme  # backward-compat note in schema section
