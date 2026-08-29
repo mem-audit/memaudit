@@ -6,6 +6,7 @@ The new-token family is gated and unimplemented - memaudit never resizes vocab.
 
 from __future__ import annotations
 
+import logging
 import math
 import string
 import warnings
@@ -34,11 +35,17 @@ from memaudit.types import Canary
 from memaudit.utils import (
     decode_ids,
     encode_ids,
+    logger,
     roundtrip_tokens,
     usable_token_ids,
 )
 
 _ALPHANUM = string.ascii_uppercase + string.digits
+_LOG = logging.getLogger(__name__)
+# Batched rejection sampling keeps the 16-candidate budget but cuts forwards
+# from O(candidates * secret_len) sequential passes to O(rounds * secret_len).
+_HIGH_PPL_CANDIDATE_BATCH = 8
+_HIGH_PPL_ROUNDS = 2
 
 
 def normalize_family(family: str) -> str:
@@ -189,7 +196,10 @@ def generate_canaries(
     canaries: list[Canary] = []
     seen: list[set[int]] = []
     total = n + n_controls
+    log_high_ppl = family_norm == "high_ppl" and model is not None
     for i in range(total):
+        if log_high_ppl and (i == 0 or (i + 1) % 25 == 0 or i + 1 == total):
+            _LOG.info("high_ppl model-scored canaries: %d/%d", i + 1, total)
         role = "candidate" if i < n else "control"
         rep = int(reps[i % len(reps)]) if role == "candidate" else 1
         ids, notes, meta = _draw_secret(
@@ -391,20 +401,46 @@ def _high_ppl_from_model(
     model.eval()
     try:
         with torch.inference_mode():
-            for _ in range(16):
-                ids = _sample_ids(model, tokenizer, usable, rng, secret_len, temperature, device)
-                ppl = _teacher_forced_ppl(model, ids, device)
-                if ppl < best_ppl:
-                    best_ppl = ppl
-                    best_ids = ids
-                if lo <= ppl <= hi:
-                    accepted = True
-                    best_ids = ids
-                    best_ppl = ppl
+            for _ in range(_HIGH_PPL_ROUNDS):
+                batch = _sample_ids_batch(
+                    model,
+                    tokenizer,
+                    usable,
+                    rng,
+                    secret_len,
+                    temperature,
+                    device,
+                    _HIGH_PPL_CANDIDATE_BATCH,
+                )
+                ppls = _teacher_forced_ppl_batch(model, batch, device)
+                for ids, ppl in zip(batch, ppls):
+                    if ppl < best_ppl:
+                        best_ppl = ppl
+                        best_ids = ids
+                    if lo <= ppl <= hi:
+                        accepted = True
+                        best_ids = ids
+                        best_ppl = ppl
+                        break
+                if accepted:
                     break
+                if getattr(device, "type", "") == "mps":
+                    try:
+                        torch.mps.empty_cache()
+                    except Exception:
+                        pass
     finally:
         if was_training and hasattr(model, "train"):
             model.train()
+        # The rejection loop issues hundreds of tiny forwards per canary; on
+        # MPS the allocator cache degrades badly over thousands of such ops
+        # (observed: seconds -> minutes per draw). Releasing it per draw keeps
+        # generation throughput flat and costs ~ms.
+        if getattr(device, "type", "") == "mps":
+            try:
+                torch.mps.empty_cache()
+            except Exception:
+                pass
     if best_ids is None:
         best_ids, _, _ = _unigram_secret(usable, rng, secret_len, None)
         return (
@@ -423,7 +459,7 @@ def _high_ppl_from_model(
     )
 
 
-def _sample_ids(
+def _sample_ids_batch(
     model: Any,
     tokenizer: Any,
     usable: list[int],
@@ -431,44 +467,72 @@ def _sample_ids(
     secret_len: int,
     temperature: float,
     device: Any,
-) -> list[int]:
+    batch_size: int,
+) -> list[list[int]]:
     import torch
 
-    start = int(rng.choice(usable))
-    ids = [start]
+    if batch_size <= 0:
+        return []
     usable_set = set(usable)
-    for _ in range(secret_len):
-        inp = torch.tensor([ids], dtype=torch.long, device=device)
-        out = model(input_ids=inp)
-        logits = _extract_logits(out)[0, -1]
-        if temperature <= 0:
-            nxt = int(torch.argmax(logits).item())
-        else:
-            probs = torch.softmax(logits / float(temperature), dim=-1)
-            nxt = int(torch.multinomial(probs, 1).item())
-        if nxt not in usable_set:
-            nxt = int(rng.choice(usable))
-        ids.append(nxt)
-    return ids[1 : secret_len + 1]
+    pad_id = int(getattr(tokenizer, "pad_token_id", None) or 0)
+    starts = torch.tensor(
+        [[int(rng.choice(usable))] for _ in range(batch_size)],
+        dtype=torch.long,
+        device=device,
+    )
+    gen_kwargs: dict[str, Any] = {
+        "max_new_tokens": secret_len,
+        "pad_token_id": pad_id,
+    }
+    if temperature <= 0:
+        gen_kwargs["do_sample"] = False
+    else:
+        gen_kwargs["do_sample"] = True
+        gen_kwargs["temperature"] = float(temperature)
+    with torch.inference_mode():
+        generated = model.generate(starts, **gen_kwargs)
+    results: list[list[int]] = []
+    for row in generated:
+        ids = [int(t) for t in row[1 : secret_len + 1].tolist()]
+        ids = [
+            tok if tok in usable_set else int(rng.choice(usable))
+            for tok in ids
+        ]
+        while len(ids) < secret_len:
+            ids.append(int(rng.choice(usable)))
+        results.append(ids[:secret_len])
+    return results
 
 
-def _teacher_forced_ppl(model: Any, ids: list[int], device: Any) -> float:
+def _teacher_forced_ppl_batch(model: Any, batch_ids: list[list[int]], device: Any) -> list[float]:
     import torch
     import torch.nn.functional as F
 
+    if not batch_ids:
+        return []
+    lengths = [len(ids) for ids in batch_ids]
+    max_len = max(lengths)
+    if max_len < 2:
+        return [float("inf")] * len(batch_ids)
+
+    padded = [ids + [0] * (max_len - len(ids)) for ids in batch_ids]
+    t = torch.tensor(padded, dtype=torch.long, device=device)
+    out = model(input_ids=t)
+    logits = _extract_logits(out)
+    ppls: list[float] = []
+    for i, ln in enumerate(lengths):
+        if ln < 2:
+            ppls.append(float("inf"))
+            continue
+        nll = F.cross_entropy(logits[i, : ln - 1, :].float(), t[i, 1:ln], reduction="mean")
+        ppls.append(float(torch.exp(nll).item()))
+    return ppls
+
+
+def _teacher_forced_ppl(model: Any, ids: list[int], device: Any) -> float:
     if len(ids) < 2:
         return float("inf")
-    t = torch.tensor([ids], dtype=torch.long, device=device)
-    out = model(input_ids=t, labels=t)
-    loss = getattr(out, "loss", None)
-    if loss is not None:
-        # float32 before exp: fp16 exp overflows to inf above nll ~11.09,
-        # which would silently reject every draw on half-precision models.
-        return float(torch.exp(loss.detach().float()).item())
-    logits = _extract_logits(out)[0, :-1]
-    targets = t[0, 1:]
-    nll = F.cross_entropy(logits.float(), targets)
-    return float(torch.exp(nll).item())
+    return _teacher_forced_ppl_batch(model, [ids], device)[0]
 
 
 def _extract_logits(out: Any) -> Any:

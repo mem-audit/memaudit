@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import platform
 import sys
@@ -244,6 +245,7 @@ def main() -> int:
     p.add_argument("--grad-accum", type=int, default=4)
     p.add_argument("--release-context", default="open-weights")
     ns = p.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     wall0 = time.perf_counter()
     wall_started = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -263,8 +265,11 @@ def main() -> int:
     data_s = time.perf_counter() - t_data
     print(f"alpaca host={len(host)} in {data_s:.1f}s", flush=True)
 
-    # README API: generate_canaries + inject + callback. model= omitted on
-    # purpose so high_ppl uses the uniform_vocab fallback (no corpus either).
+    # README API: generate_canaries + inject + callback. The base (pre-LoRA)
+    # model is passed so high_ppl is genuinely model-scored rejection sampling
+    # (actual_generator=model_scored_high_ppl), not the uniform_vocab fallback
+    # the first powered run silently used.
+    t_can = time.perf_counter()
     canaries = generate_canaries(
         tokenizer,
         n=ns.n,
@@ -273,6 +278,14 @@ def main() -> int:
         repetitions=(1, 4, 16),
         seed=ns.seed,
         profile="powered",
+        model=model,
+    )
+    canary_gen_s = time.perf_counter() - t_can
+    in_band = sum(1 for c in canaries if (c.metadata or {}).get("accepted_band"))
+    print(
+        f"canaries model-scored in {canary_gen_s:.1f}s "
+        f"({in_band}/{len(canaries)} inside the PPL band)",
+        flush=True,
     )
     ds, manifest = inject(
         host,
@@ -441,6 +454,9 @@ def main() -> int:
         "n_controls": ns.n_controls,
         "include_prob": manifest.get("include_prob"),
         "family": "high_ppl",
+        "canary_scoring_model": model_name,
+        "canary_generation_seconds": round(canary_gen_s, 3),
+        "canaries_in_ppl_band": in_band,
         "repetitions": [1, 4, 16],
         "token_budget": budget,
         "train_seconds": round(train_s, 3),
