@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Powered flagship case study re-run with genuinely model-scored `high_ppl` canaries (base TinyLlama rejection sampling; `actual_generator=model_scored_high_ppl`, 300/300 in the target perplexity band). Honest **0.874%** budget (22,228 / 2,521,431 tokens). Measured TPR@1%FPR **0.100** (10/100, CI [0.049, 0.176]), AUC 0.837, tier curve 1x 0/34 · 4x 1/33 · 16x 9/33, regurgitation 0/100. Report `examples/alpaca-powered-report.json` (schema 1.2.0). The prior uniform_vocab run is archived as `examples/alpaca-powered-report-v0.1-uniformvocab.json`.
+- `high_ppl` canary generation: base model can be passed for real rejection sampling, perplexity scored in float32, per-draw MPS allocator cache release (fixes multi-hour generation stalls on Apple Silicon), and explicit generator provenance (`model_scored_high_ppl` vs `uniform_vocab`).
+- Live TRL integration tests: preflight verdicts asserted against real `SFTTrainer` prepared datasets and collators in both label eras (TRL 0.29.x mask era and TRL >=1.9 labels-column era), plus real-BPE alignment-ladder and chat-template `max_length` pre-check coverage. New fatal: secret present only in raw text columns but missing from the tokenized stream.
+
 ## 0.1.0 - 2026-08-27
 
 First buyer-facing release.
@@ -12,7 +18,7 @@ First buyer-facing release.
 - `--ref auto` uses `disable_adapter()` on an unmerged LoRA. Full fine-tunes must pass `--ref <base>` or explicit `--ref none` (downgraded headline). No silent fallback.
 - `from memaudit import inject` is the public helper; the implementation module is `memaudit.injection` (no submodule shadowing).
 - Reports are strict JSON (NaN/Inf become null). `phone_home` is always false.
-- Powered flagship case study: TinyLlama-1.1B-Chat + **20,000** Stanford Alpaca rows, LoRA r=8, 1 epoch, **100 / 200** canaries, honest **0.907%** budget. Measured TPR@1%FPR **0.180** (18/100, CI [0.110, 0.269]), AUC 0.776, regurgitation 0/100. Report `examples/alpaca-powered-report.json`. The n=12 first look remains as an appendix.
+- Powered flagship case study: TinyLlama-1.1B-Chat + **20,000** Stanford Alpaca rows, LoRA r=8, 1 epoch, **100 / 200** canaries, honest **0.907%** budget. Measured TPR@1%FPR **0.180** (18/100, CI [0.110, 0.269]), AUC 0.776, regurgitation 0/100. Canaries used the `uniform_vocab` fallback (no model passed at generation); report archived as `examples/alpaca-powered-report-v0.1-uniformvocab.json`. The n=12 first look remains as an appendix.
 - Flagship public case study: TinyLlama-1.1B-Chat + 5,000 Stanford Alpaca rows, LoRA r=8, honest 0.39% canary budget. Script `examples/alpaca_case_study.py`, report `examples/alpaca-case-study-report.json`, write-up `docs/case-study-alpaca.md`. Measured TPR@1%FPR 0.500 (6/12, CI [0.211, 0.789]), AUC 0.880, regurgitation 0/12.
 - `memaudit demo` / `python examples/demo.py`: TinyDemoLM positive-control validation with measured numbers.
 - `memaudit doctor` / `scripts/acceptance.sh`: environment + report schema acceptance.
