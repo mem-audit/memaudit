@@ -407,12 +407,20 @@ def _high_ppl_from_model(
             model.train()
     if best_ids is None:
         best_ids, _, _ = _unigram_secret(usable, rng, secret_len, None)
-        return best_ids, "high_ppl sampling failed; fell back to unigram", {"ppl": None}
+        return (
+            best_ids,
+            "high_ppl sampling failed; fell back to uniform-from-vocab",
+            {"ppl": None, "source": "uniform_vocab"},
+        )
     note = (
         f"rejection-sampled from the provided model at T={temperature} "
         f"into PPL band {ppl_band}; {'accepted' if accepted else 'kept closest'} ppl={best_ppl:.2f}"
     )
-    return best_ids, note, {"ppl": best_ppl, "accepted_band": accepted, "source": "model_sample"}
+    return (
+        best_ids,
+        note,
+        {"ppl": best_ppl, "accepted_band": accepted, "source": "model_scored_high_ppl"},
+    )
 
 
 def _sample_ids(
@@ -454,10 +462,12 @@ def _teacher_forced_ppl(model: Any, ids: list[int], device: Any) -> float:
     out = model(input_ids=t, labels=t)
     loss = getattr(out, "loss", None)
     if loss is not None:
-        return float(torch.exp(loss).item())
+        # float32 before exp: fp16 exp overflows to inf above nll ~11.09,
+        # which would silently reject every draw on half-precision models.
+        return float(torch.exp(loss.detach().float()).item())
     logits = _extract_logits(out)[0, :-1]
     targets = t[0, 1:]
-    nll = F.cross_entropy(logits, targets)
+    nll = F.cross_entropy(logits.float(), targets)
     return float(torch.exp(nll).item())
 
 
