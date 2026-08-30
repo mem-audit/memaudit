@@ -172,6 +172,8 @@ def test_render_annex_markdown():
     md = render_annex_markdown(report)
     assert "EDPB Opinion 28/2024" in md
     assert "IN SCOPE" in md and "OUT OF SCOPE" in md
+    assert "EXECUTED" in md and "NOT RUN" in md
+    assert "| Attack class | EDPB ref | Scope | Executed | Method / note |" in md
     assert "para 55(i)" in md and "para 55(iii)" in md
     assert "`internal`" in md
     assert "high_ppl" in md
@@ -199,3 +201,5 @@ def test_ensure_annex_rebuilds_for_legacy_reports():
     annex = ensure_annex(legacy)
     assert annex["release_context"]["declared"] == "unspecified"
     assert len(annex["attack_coverage"]) == 6
+    rows = {r["attack_class"]: r for r in annex["attack_coverage"]}
+    assert rows["regurgitation of training data"]["execution"]["status"] == "not_recorded"

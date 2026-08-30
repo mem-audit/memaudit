@@ -250,3 +250,63 @@ def test_legacy_annex_reconstructs_executed_from_skip_generation_false():
     assert rows["regurgitation of training data"]["execution"]["status"] == "executed"
     assert rows["model inversion"]["execution"]["status"] == "not_run"
     assert annex["quantified_results"]["regurgitation"]["execution"]["status"] == "executed"
+
+
+def test_legacy_annex_reconstructs_not_run_from_skip_generation_true():
+    from memaudit.compliance import ensure_annex
+
+    legacy = {
+        "schema_version": "1.2.0",
+        "membership": {"n_members": 4, "n_controls": 6},
+        "regurgitation": {"overall": {"rate": 0.0, "n": 4, "n_regurgitated": 0}},
+        "negative_controls": {"n": 6},
+        "provenance": {"resolved_config": {"skip_generation": True}},
+        "compliance_annex": {
+            "attack_coverage": [
+                {"attack_class": "regurgitation of training data", "status": "in_scope"},
+            ],
+            "quantified_results": {"regurgitation": {"overall": {"rate": 0.0}}},
+        },
+    }
+    annex = ensure_annex(legacy)
+    rows = {r["attack_class"]: r for r in annex["attack_coverage"]}
+    assert rows["regurgitation of training data"]["execution"]["status"] == "not_run"
+    assert rows["regurgitation of training data"]["execution"]["reason"] == "skip_generation"
+    assert annex["quantified_results"]["regurgitation"]["execution"]["status"] == "not_run"
+
+
+def test_legacy_annex_not_recorded_when_neither_field():
+    from memaudit.compliance import derive_regurgitation_execution, ensure_annex
+
+    legacy = {
+        "schema_version": "1.0.0",
+        "membership": {"n_members": 4, "n_controls": 6},
+        "regurgitation": {"overall": {"rate": 0.0}},
+        "negative_controls": {"n": 6},
+    }
+    assert derive_regurgitation_execution(legacy)["status"] == "not_recorded"
+    annex = ensure_annex(legacy)
+    rows = {r["attack_class"]: r for r in annex["attack_coverage"]}
+    assert rows["regurgitation of training data"]["execution"]["status"] == "not_recorded"
+    md = render_annex_markdown(legacy)
+    assert "NOT RECORDED" in md
+
+
+def test_shipped_examples_reconstruct_as_executed():
+    from memaudit.compliance import ensure_annex
+
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "examples" / "alpaca-powered-report.json",
+        root / "examples" / "alpaca-powered-report-v0.1-uniformvocab.json",
+        root / "examples" / "alpaca-case-study-report.json",
+        root / "examples" / "demo-report.json",
+    ]
+    for path in paths:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        assert report["provenance"]["resolved_config"]["skip_generation"] is False
+        assert "execution" not in (report.get("regurgitation") or {})
+        annex = ensure_annex(report)
+        rows = {r["attack_class"]: r for r in annex["attack_coverage"]}
+        assert rows["regurgitation of training data"]["execution"]["status"] == "executed", path.name
+        assert annex["quantified_results"]["regurgitation"]["execution"]["status"] == "executed"
