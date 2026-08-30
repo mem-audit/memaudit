@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report schema **1.3.0** (additive on 1.2.0): `regurgitation.execution` and matching `execution` blocks on per-canary rows, negative controls, attack coverage, and `threat_model.executed` / `not_executed`. A skipped generation run (`--skip-generation`) is recorded as `not_run` with `rate: null`, not as a measured zero. A genuine 0/N detection stays `0.0`.
+
 ## 0.2.0 - 2026-08-30
 
 Review-response release: preflight evidence, audit profiles, PEFT matrix, scorer seam, schema 1.2.0.

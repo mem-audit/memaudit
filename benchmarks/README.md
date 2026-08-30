@@ -125,6 +125,8 @@ memaudit audit --model benchmarks/out/adapter \
   --skip-generation --output benchmarks/out/cli-reaudit.json
 ```
 
+`--skip-generation` skips regurgitation generation. The re-audit report records `regurgitation.execution.status=not_run` and `rate: null` — that is not a zero-detection result. Omit the flag to measure regurgitation.
+
 ## GPU-box recipe (paper-closer n)
 
 If you have a GPU and want hundreds of members / 200+ controls, keep canary tokens <=1% of host tokens (the script grows the host if you go over):
