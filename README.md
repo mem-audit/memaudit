@@ -6,7 +6,7 @@
 
 **Training-data memorization auditor for Hugging Face Trainer / TRL fine-tunes.**
 
-A local, Apache-2.0 plugin that answers two questions every fine-tune in a regulated setting should document ([EDPB Opinion 28/2024](https://www.edpb.europa.eu/) para 55 / para 58):
+A local, Apache-2.0 plugin that answers two questions every fine-tune in a regulated setting should document 
 
 1. **Membership**  -  can an attacker with logprob access tell what was trained on?
 2. **Regurgitation**  -  does the model emit training content when prompted with a prefix?
