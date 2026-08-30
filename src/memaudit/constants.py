@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+# 1.3.0: additive on 1.2.0 (regurgitation.execution and the matching
+# execution dimension on attack coverage, negative controls, and
+# threat_model.executed / not_executed). rate is null when regurgitation
+# was not run; a genuine zero-detection run still reports 0.0.
 # 1.2.0: additive on 1.1.0 (audit_profile, canaries provenance block,
 # membership.by_repetition, calibration_stability, regurgitation protocol
 # fields, real-record inferential-vs-descriptive split, membership.scorer).
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.3.0"
 DEFAULT_MEMBERSHIP_SCORER = "min_k_plus_plus"
 TOOL_VERSION = "0.2.0"
 
@@ -131,12 +137,11 @@ ANNEX_DISCLAIMER = (
     "and it is not a CNIL / AI Act certification."
 )
 
-LIMITATIONS_STATEMENT = (
-    "This report is evidence of resistance to the attacks that were actually "
-    "run: (i) membership inference via a pre-registered canary MIA and "
-    "(iii) regurgitation via prefix-prompted generation. It is not evidence "
-    "of resistance to inversion, reconstruction, attribute inference, or "
-    "exfiltration. Per EDPB Opinion 28/2024 para 55, \u201c" + EDPB_55_QUOTE + "\u201d. "
+_LIMITATIONS_TAIL = (
+    "It is not evidence of resistance to inversion, reconstruction, attribute "
+    "inference, or exfiltration. Per EDPB Opinion 28/2024 para 55, \u201c"
+    + EDPB_55_QUOTE
+    + "\u201d. "
     "This report does not constitute a determination of anonymity or GDPR "
     "compliance, and it is not a GDPR / AI Act / CNIL compliance "
     "certification. Real-record ranking is exploratory and descriptive: no "
@@ -149,6 +154,55 @@ LIMITATIONS_STATEMENT = (
     "p-value absence is not a privacy guarantee. memaudit runs entirely "
     "locally and does not phone home."
 )
+
+# Both-executed text. Exported so legal/DISCLAIMER.md and the HF Space can
+# quote the full-run wording; renderers that know the executed set should
+# call ``limitations_statement`` instead of this constant.
+LIMITATIONS_STATEMENT = (
+    "This report is evidence of resistance to the attacks that were actually "
+    "run: (i) membership inference via a pre-registered canary MIA and "
+    "(iii) regurgitation via prefix-prompted generation. " + _LIMITATIONS_TAIL
+)
+
+
+def limitations_statement(executed: Sequence[str] | None = None) -> str:
+    """Limitations prose for the attacks that were actually executed.
+
+    ``LIMITATIONS_STATEMENT`` is this function at the both-executed default.
+    A skipped regurgitation run must not claim prefix-prompted generation ran.
+    """
+    executed_list = list(executed) if executed is not None else [
+        "membership_inference",
+        "regurgitation",
+    ]
+    has_mia = "membership_inference" in executed_list
+    has_regurg = "regurgitation" in executed_list
+    if has_mia and has_regurg:
+        return LIMITATIONS_STATEMENT
+    ran: list[str] = []
+    if has_mia:
+        ran.append("(i) membership inference via a pre-registered canary MIA")
+    if has_regurg:
+        ran.append("(iii) regurgitation via prefix-prompted generation")
+    if ran:
+        lead = (
+            "This report is evidence of resistance to the attacks that were actually "
+            f"run: {' and '.join(ran)}. "
+        )
+    else:
+        lead = "This report contains no executed attack measurements. "
+    extra = ""
+    if has_mia and not has_regurg:
+        extra = (
+            "Regurgitation via prefix-prompted generation was not executed in this "
+            "run; this report is not evidence of resistance to extraction. "
+        )
+    elif has_regurg and not has_mia:
+        extra = (
+            "Membership inference was not executed in this run; this report is "
+            "not evidence of resistance to membership inference. "
+        )
+    return lead + extra + _LIMITATIONS_TAIL
 
 
 def get_audit_profile(name: str) -> dict:

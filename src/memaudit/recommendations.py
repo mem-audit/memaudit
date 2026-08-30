@@ -6,6 +6,8 @@ makes a training run compliant.
 
 from __future__ import annotations
 
+from typing import Any
+
 def recommend(
     *,
     tpr: float | None,
@@ -18,9 +20,16 @@ def recommend(
     exact_dup_rate: float | None = None,
     embeddings_trainable: bool | None = None,
     extra_warnings: list[str] | None = None,
+    regurgitation_execution: dict[str, Any] | None = None,
 ) -> list[str]:
     recs: list[str] = []
     leaky = (tpr is not None and tpr >= 0.10) or (regurgitation_rate is not None and regurgitation_rate > 0)
+    exec_st = (regurgitation_execution or {}).get("status")
+    if exec_st and exec_st != "executed":
+        recs.append(
+            "Regurgitation was not tested in this run (skip_generation). "
+            "Re-run without it for regurgitation evidence."
+        )
 
     if exact_dup_rate is not None and exact_dup_rate > 0.02:
         recs.append(

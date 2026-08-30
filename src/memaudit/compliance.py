@@ -192,7 +192,50 @@ def normalize_release_context(value: str | None) -> str:
     return key
 
 
-def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, Any]) -> list[dict[str, Any]]:
+_OUT_OF_SCOPE_EXECUTION = {"status": "not_run", "reason": "out_of_scope"}
+
+
+def derive_regurgitation_execution(
+    report: dict[str, Any] | None = None,
+    regurgitation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve execution: explicit field, then ``skip_generation``, else default.
+
+    A hand-built regurgitation block (no report) defaults to ``executed`` so
+    ``build_report`` does not require the new key. A stored report that has
+    neither field is ``not_recorded`` (pre-1.3 reconstruction).
+    """
+    reg = regurgitation if regurgitation is not None else ((report or {}).get("regurgitation") or {})
+    existing = reg.get("execution") if isinstance(reg, dict) else None
+    if isinstance(existing, dict) and existing.get("status"):
+        return dict(existing)
+    skip = None
+    if report:
+        skip = ((report.get("provenance") or {}).get("resolved_config") or {}).get(
+            "skip_generation"
+        )
+    if skip is True:
+        return {
+            "status": "not_run",
+            "reason": "skip_generation",
+            "note": (
+                "Regurgitation generation was not executed in this run. "
+                "The protocol fields below describe the test that WOULD have "
+                "been run; they are not results."
+            ),
+        }
+    if skip is False:
+        return {"status": "executed"}
+    if report is None:
+        return {"status": "executed"}
+    return {"status": "not_recorded"}
+
+
+def attack_coverage_table(
+    membership: dict[str, Any],
+    regurgitation: dict[str, Any],
+    execution: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """The para 55 attack-class table: what ran, what explicitly did not."""
     prefix_fracs = regurgitation.get("prefix_fractions")
     headline = membership.get("headline_attack") or HEADLINE_ATTACK
@@ -200,11 +243,13 @@ def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, A
     scorer_note = ""
     if scorer_meta.get("name"):
         scorer_note = f" (scorer {scorer_meta.get('name')} v{scorer_meta.get('version')})"
+    regurg_exec = execution or regurgitation.get("execution") or {"status": "executed"}
     return [
         {
             "attack_class": "membership inference",
             "edpb_ref": "para 55(i)",
             "status": "in_scope",
+            "execution": {"status": "executed"},
             "method": (
                 f"pre-registered canary MIA: {headline}{scorer_note} "
                 "on the secret span, thresholded on held-out canary controls "
@@ -219,18 +264,21 @@ def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, A
             "attack_class": "attribute inference",
             "edpb_ref": "para 55(i)",
             "status": "out_of_scope",
+            "execution": dict(_OUT_OF_SCOPE_EXECUTION),
             "note": "not run; this report is no evidence of resistance to it",
         },
         {
             "attack_class": "exfiltration",
             "edpb_ref": "para 55(ii)",
             "status": "out_of_scope",
+            "execution": dict(_OUT_OF_SCOPE_EXECUTION),
             "note": "not run; this report is no evidence of resistance to it",
         },
         {
             "attack_class": "regurgitation of training data",
             "edpb_ref": "para 55(iii)",
             "status": "in_scope",
+            "execution": dict(regurg_exec),
             "method": (
                 "greedy prefix-prompted completion on inserted canaries "
                 f"(prefix fractions {prefix_fracs}), protocol-scoped as "
@@ -243,12 +291,14 @@ def attack_coverage_table(membership: dict[str, Any], regurgitation: dict[str, A
             "attack_class": "model inversion",
             "edpb_ref": "para 55(iv)",
             "status": "out_of_scope",
+            "execution": dict(_OUT_OF_SCOPE_EXECUTION),
             "note": "not run; this report is no evidence of resistance to it",
         },
         {
             "attack_class": "reconstruction",
             "edpb_ref": "para 55(v)",
             "status": "out_of_scope",
+            "execution": dict(_OUT_OF_SCOPE_EXECUTION),
             "note": "not run; this report is no evidence of resistance to it",
         },
     ]
@@ -293,10 +343,11 @@ def build_compliance_annex(
                 f"actual_generator={actual_gen}]"
             )
         family_rows[fam] = row
+    regurg_exec = derive_regurgitation_execution(None, regurgitation)
     return {
         "standard": "EDPB Opinion 28/2024 (adopted 17 December 2024), para 46 / para 55 / para 58",
         "disclaimer": ANNEX_DISCLAIMER,
-        "attack_coverage": attack_coverage_table(membership, regurgitation),
+        "attack_coverage": attack_coverage_table(membership, regurgitation, regurg_exec),
         "threat_models": {
             "edpb_ref": "para 58(c): threat model and risk assessments",
             "attacks": AUDIT_ATTACK_THREAT_MODELS,
@@ -345,6 +396,7 @@ def build_compliance_annex(
                 "calibration_stability": membership.get("calibration_stability"),
             },
             "regurgitation": {
+                "execution": regurg_exec,
                 "overall": regurgitation.get("overall"),
                 "by_tier": regurgitation.get("by_tier"),
                 "prefix_policy": regurgitation.get("prefix_policy"),
@@ -368,14 +420,45 @@ def build_compliance_annex(
     }
 
 
+def _attach_execution(annex: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Copy an existing annex and fill missing execution fields (legacy 1.1/1.2)."""
+    out = dict(annex)
+    exec_state = derive_regurgitation_execution(report)
+    coverage = []
+    for row in out.get("attack_coverage") or []:
+        copied = dict(row)
+        if "execution" not in copied:
+            if copied.get("status") == "out_of_scope":
+                copied["execution"] = dict(_OUT_OF_SCOPE_EXECUTION)
+            elif "regurgit" in str(copied.get("attack_class") or "").lower():
+                copied["execution"] = exec_state
+            else:
+                copied["execution"] = {"status": "executed"}
+        coverage.append(copied)
+    out["attack_coverage"] = coverage
+    qr = dict(out.get("quantified_results") or {})
+    reg = dict(qr.get("regurgitation") or {})
+    if "execution" not in reg:
+        reg["execution"] = exec_state
+    qr["regurgitation"] = reg
+    out["quantified_results"] = qr
+    return out
+
+
 def ensure_annex(report: dict[str, Any]) -> dict[str, Any]:
     """Return the report's annex, rebuilding it for schema-1.0.x reports."""
     annex = report.get("compliance_annex")
     if isinstance(annex, dict) and annex:
-        return annex
+        return _attach_execution(annex, report)
+    regurgitation = report.get("regurgitation") or {}
+    if not isinstance(regurgitation.get("execution"), dict):
+        regurgitation = {
+            **regurgitation,
+            "execution": derive_regurgitation_execution(report, regurgitation),
+        }
     return build_compliance_annex(
         membership=report.get("membership") or {},
-        regurgitation=report.get("regurgitation") or {},
+        regurgitation=regurgitation,
         negative_controls=report.get("negative_controls") or {},
         real_records=report.get("real_records"),
         audit_scope=report.get("audit_scope"),
@@ -446,15 +529,25 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
 
     add("## 3. Attack coverage (para 55)")
     add("")
-    add("| Attack class | EDPB ref | Status | Method / note |")
-    add("|---|---|---|---|")
+    add("| Attack class | EDPB ref | Scope | Executed | Method / note |")
+    add("|---|---|---|---|---|")
     for row in annex.get("attack_coverage") or []:
         status = "IN SCOPE" if row.get("status") == "in_scope" else "OUT OF SCOPE"
+        exec_st = (row.get("execution") or {}).get("status")
+        if exec_st == "executed":
+            executed_cell = "EXECUTED"
+        elif exec_st == "not_recorded":
+            executed_cell = "NOT RECORDED"
+        else:
+            executed_cell = "NOT RUN"
         detail = row.get("method") or row.get("note") or ""
         add(f"| {_md_escape(row.get('attack_class'))} | {_md_escape(row.get('edpb_ref'))} "
-            f"| {status} | {_md_escape(detail)} |")
+            f"| {status} | {executed_cell} | {_md_escape(detail)} |")
     add("")
-    add("Per para 55, results below are evidence only for the attacks marked IN SCOPE.")
+    add(
+        "Per para 55, results below are evidence only for the attacks marked "
+        "IN SCOPE **and** EXECUTED. Attacks marked NOT RUN were not tested in this report."
+    )
     add("")
 
     add("## 4. Quantified results")
@@ -489,16 +582,26 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
         )
     overall = reg.get("overall") or {}
     detected = reg.get("detected") or {}
-    if detected.get("wording"):
-        add(f"| Regurgitation (exact-match protocol) | {detected.get('wording')} |")
-    add(f"| Regurgitation rate (overall, incl. approx.) | {_fmt(overall.get('rate'))} "
-        f"({_fmt(overall.get('n_regurgitated'))}/{_fmt(overall.get('n'))}) |")
-    for tier, block in (reg.get("by_tier") or {}).items():
-        add(f"| Regurgitation at {tier}x repetitions | {_fmt((block or {}).get('rate'))} |")
+    reg_exec = reg.get("execution") or {}
+    if reg_exec.get("status") == "not_run":
+        reason = reg_exec.get("reason") or "skip_generation"
+        add(f"| Regurgitation | **NOT RUN** in this audit ({reason}) — no measurement |")
+    else:
+        if detected.get("wording"):
+            add(f"| Regurgitation (exact-match protocol) | {detected.get('wording')} |")
+        add(f"| Regurgitation rate (overall, incl. approx.) | {_fmt(overall.get('rate'))} "
+            f"({_fmt(overall.get('n_regurgitated'))}/{_fmt(overall.get('n'))}) |")
+        for tier, block in (reg.get("by_tier") or {}).items():
+            add(f"| Regurgitation at {tier}x repetitions | {_fmt((block or {}).get('rate'))} |")
     neg = scope.get("negative_controls") or {}
-    add(f"| Negative controls (never inserted) | n={_fmt(neg.get('n'))}, "
-        f"regurgitation {_fmt(neg.get('regurgitation_rate'))}, "
-        f"mean headline score {_fmt(neg.get('mean_headline_score'))} |")
+    if reg_exec.get("status") == "not_run":
+        add(f"| Negative controls (never inserted) | n={_fmt(neg.get('n'))}, "
+            f"regurgitation not tested, "
+            f"mean headline score {_fmt(neg.get('mean_headline_score'))} |")
+    else:
+        add(f"| Negative controls (never inserted) | n={_fmt(neg.get('n'))}, "
+            f"regurgitation {_fmt(neg.get('regurgitation_rate'))}, "
+            f"mean headline score {_fmt(neg.get('mean_headline_score'))} |")
     set_level = (annex.get("quantified_results") or {}).get("real_records_set_level") or {}
     if set_level.get("inferential"):
         add(f"| Real-record set-level test (user-supplied held-out) | p={_fmt(set_level.get('p_value'), 4)} "
@@ -513,7 +616,10 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
     add("## 5. Threat model per test (para 58(c))")
     add("")
     for name, tm in (annex.get("threat_models") or {}).get("attacks", {}).items():
-        add(f"### {name.replace('_', ' ')} - {tm.get('edpb_class')}")
+        heading = f"### {name.replace('_', ' ')} - {tm.get('edpb_class')}"
+        if name == "regurgitation" and reg_exec.get("status") == "not_run":
+            heading += " (protocol configured; NOT RUN in this report)"
+        add(heading)
         add("")
         add(f"- **Attacker access:** {tm.get('attacker_access')}")
         add(f"- **Attacker knowledge:** {tm.get('attacker_knowledge')}")

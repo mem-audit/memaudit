@@ -65,6 +65,8 @@ def summary_blocks(report: dict[str, Any]) -> tuple[str, str, str, str, str, str
     reg = report.get("regurgitation") or {}
     neg = report.get("negative_controls") or {}
     overall = reg.get("overall") or {}
+    exec_st = (reg.get("execution") or {}).get("status") or "executed"
+    exec_reason = (reg.get("execution") or {}).get("reason")
 
     scale = demo.get("scale") or (
         "TinyDemoLM positive-control validation."
@@ -85,13 +87,26 @@ def summary_blocks(report: dict[str, Any]) -> tuple[str, str, str, str, str, str
 {mem.get("warning") or ""}
 """
 
+    if exec_st != "executed":
+        rate_cell = f"**not run** (`{exec_st}`{f', {exec_reason}' if exec_reason else ''})"
+        tier_cell = "not run"
+        neg_rate_cell = "not tested"
+    else:
+        rate_cell = (
+            f"**{_fmt_pct(overall.get('rate'))}** "
+            f"({overall.get('n_regurgitated')}/{overall.get('n')})"
+        )
+        tier_cell = f"`{json.dumps(reg.get('by_tier') or {}, separators=(',', ': '))}`"
+        neg_rate_cell = f"**{_fmt_pct(neg.get('regurgitation_rate'))}**"
+
     regurg_md = f"""
 ### Regurgitation
 
 | Field | Value |
 |---|---|
-| Overall rate | **{_fmt_pct(overall.get("rate"))}** ({overall.get("n_regurgitated")}/{overall.get("n")}) |
-| By tier | `{json.dumps(reg.get("by_tier") or {}, separators=(",", ": "))}` |
+| Execution | `{exec_st}` |
+| Overall rate | {rate_cell} |
+| By tier | {tier_cell} |
 | Prefix fractions | `{reg.get("prefix_fractions")}` |
 | Thresholds | `{json.dumps(reg.get("thresholds") or {}, separators=(",", ": "))}` |
 
@@ -105,7 +120,7 @@ def summary_blocks(report: dict[str, Any]) -> tuple[str, str, str, str, str, str
 |---|---|
 | n | {neg.get("n")} |
 | Mean headline score | {_fmt_pct(neg.get("mean_headline_score"))} |
-| Regurgitation rate | **{_fmt_pct(neg.get("regurgitation_rate"))}** |
+| Regurgitation rate | {neg_rate_cell} |
 
 {neg.get("note") or ""}
 """
@@ -200,6 +215,7 @@ def build_app() -> gr.Blocks:
                 "tool_version",
                 "created_at",
                 "model",
+                "threat_model",
                 "membership",
                 "regurgitation",
                 "negative_controls",
@@ -293,15 +309,25 @@ def build_app() -> gr.Blocks:
         gr.Markdown(SCALE_BANNER, elem_classes=["scale-box"])
         gr.Markdown(LINKS_MD)
 
+        exec_st = ((report.get("regurgitation") or {}).get("execution") or {}).get(
+            "status"
+        ) or "executed"
+        if exec_st != "executed":
+            regurg_pass_note = (
+                '<p class="pass-note">Regurgitation was not executed in this report '
+                f"({exec_st}); this is not a zero-detection result.</p>"
+            )
+        else:
+            regurg_pass_note = (
+                '<p class="pass-note">Negative-control regurgitation at 0.0 '
+                "means never-inserted canaries were not emitted — expected for a calibrated run.</p>"
+            )
         with gr.Tabs():
             with gr.Tab("Headline metrics"):
                 gr.Markdown(mem_md)
                 gr.Markdown(reg_md)
                 gr.Markdown(neg_md)
-                gr.Markdown(
-                    '<p class="pass-note">Negative-control regurgitation at 0.0 '
-                    "means never-inserted canaries were not emitted — expected for a calibrated run.</p>"
-                )
+                gr.Markdown(regurg_pass_note)
             with gr.Tab("Run metadata"):
                 gr.Markdown(meta_md)
             with gr.Tab("Limitations"):

@@ -298,7 +298,15 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--tokenizer", default=None, help="Tokenizer path if not stored with --model")
     audit.add_argument("--output", default=None, help="Report JSON path")
     audit.add_argument("--real-sample", type=int, default=64)
-    audit.add_argument("--skip-generation", action="store_true")
+    audit.add_argument(
+        "--skip-generation",
+        action="store_true",
+        help=(
+            "Do not run prefix-prompted regurgitation generation. "
+            "The report records regurgitation as not_run with rate null; "
+            "this is the absence of a measurement, not a zero-detection result."
+        ),
+    )
     audit.add_argument(
         "--reveal",
         action="store_true",

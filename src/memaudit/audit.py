@@ -69,6 +69,35 @@ from memaudit.utils import (
 
 log = logging.getLogger("memaudit")
 
+_REGURGITATION_NOT_RUN_NOTE = (
+    "Regurgitation generation was not executed in this run. The protocol "
+    "fields below describe the test that WOULD have been run; they are not results."
+)
+_REGURGITATION_SKIP_WARNING = (
+    "Regurgitation generation was not executed (skip_generation=True). "
+    "This report contains no regurgitation measurement; it is not a "
+    "zero-detection result."
+)
+
+
+def regurgitation_execution_from_skip(skip_generation: bool) -> dict[str, Any]:
+    """Canonical run-level regurgitation execution state (P0)."""
+    if skip_generation:
+        return {
+            "status": "not_run",
+            "reason": "skip_generation",
+            "note": _REGURGITATION_NOT_RUN_NOTE,
+        }
+    return {"status": "executed"}
+
+
+def regurgitation_was_evaluated(row: Mapping[str, Any]) -> bool:
+    """True only when this canary's regurgitation protocol actually ran."""
+    block = row.get("regurgitation") if isinstance(row, Mapping) else None
+    if not isinstance(block, Mapping):
+        return False
+    return (block.get("execution") or {}).get("status") == "executed"
+
 
 def validate_manifest_for_audit(manifest: dict[str, Any]) -> None:
     """Refuse artifacts that would produce a silently empty or inverted audit."""
@@ -353,6 +382,7 @@ def run_audit(
             f"Unknown audit profile {profile_name!r}. Use smoke, routine, or powered."
         ) from exc
     fpr = float(profile_spec.get("target_fpr") or DEFAULT_TARGET_FPR)
+    regurgitation_execution = regurgitation_execution_from_skip(bool(skip_generation))
     try:
         scorer_obj = resolve_scorer(scorer, min_k_pct=min_k_pct)
     except MemauditConfigError:
@@ -364,6 +394,8 @@ def run_audit(
     scorer_block = scorer_provenance(scorer_obj)
     custom_scorer = scorer_block["name"] not in {DEFAULT_SCORER_NAME, HEADLINE_ATTACK}
     audit_warnings: list[str] = []
+    if skip_generation:
+        audit_warnings.append(_REGURGITATION_SKIP_WARNING)
     used_headline = HEADLINE_ATTACK if not custom_scorer else str(scorer_block["name"])
     signals_cache = SignalsCache()
     if not controls:
@@ -516,8 +548,13 @@ def run_audit(
             combined = _combine_with_scorer(scorer_obj, ft_sig, ref_sig, min_k_pct)
             if not custom_scorer and combined.get("headline_attack_used") != HEADLINE_ATTACK:
                 used_headline = HEADLINE_ATTACK_FALLBACK
-            gen_block: dict[str, Any] = {"skipped": True}
-            if not skip_generation:
+            if skip_generation:
+                regurg_row: dict[str, Any] = {
+                    "execution": {"status": "not_run", "reason": "skip_generation"},
+                    "regurgitated": None,
+                    "by_prefix": [],
+                }
+            else:
                 gen_block = generate_canary_completions(
                     model,
                     tokenizer,
@@ -525,6 +562,21 @@ def run_audit(
                     canary.get("secret_token_ids") or [],
                     prefix_fractions=prefix_fractions,
                 )
+                per_exec = gen_block.get("execution")
+                if not isinstance(per_exec, dict) or not per_exec.get("status"):
+                    per_exec = {"status": "executed"}
+                if per_exec.get("status") == "executed":
+                    regurgitated: bool | None = bool(gen_block.get("regurgitated"))
+                else:
+                    regurgitated = gen_block.get("regurgitated")
+                regurg_row = {
+                    "execution": per_exec,
+                    "regurgitated": regurgitated,
+                    "by_prefix": [
+                        {kk: vv for kk, vv in p.items() if kk != "prefix"}
+                        for p in (gen_block.get("by_prefix") or [])
+                    ],
+                }
             ev = ev_by_id.get(canary.get("id")) or {}
             row = {
                 "id": canary.get("id"),
@@ -536,13 +588,7 @@ def run_audit(
                 "actual_generator": actual_generator_of(canary),
                 "scores": {k: v for k, v in combined.items() if k != "headline_attack_used"},
                 "ref_source": how,
-                "regurgitation": {
-                    "regurgitated": gen_block.get("regurgitated", False),
-                    "by_prefix": [
-                        {kk: vv for kk, vv in p.items() if kk != "prefix"}
-                        for p in (gen_block.get("by_prefix") or [])
-                    ],
-                },
+                "regurgitation": regurg_row,
             }
             if ev:
                 row["evidence_level"] = ev.get("evidence_level")
@@ -580,24 +626,36 @@ def run_audit(
         )
         audit_warnings.append(refuse_note)
 
-    # regurgitation rates
+    # regurgitation rates — only executed rows enter a denominator
     by_tier: dict[str, dict[str, Any]] = {}
     tier_hits: dict[int, list[bool]] = defaultdict(list)
     overall_flags: list[bool] = []
     for row, canary in zip(per_canary, canaries):
         if not canary.get("included"):
             continue
+        if not regurgitation_was_evaluated(row):
+            continue
         flag = bool((row.get("regurgitation") or {}).get("regurgitated"))
         overall_flags.append(flag)
         tier_hits[int(canary.get("repetitions") or 1)].append(flag)
     for tier, flags in sorted(tier_hits.items()):
-        by_tier[str(tier)] = {"n": len(flags), "n_regurgitated": int(sum(flags)), "rate": float(np.mean(flags))}
-    overall_rate = float(np.mean(overall_flags)) if overall_flags else float("nan")
+        if not flags:
+            continue
+        n_tier = len(flags)
+        n_hit = int(sum(flags))
+        by_tier[str(tier)] = {
+            "n": n_tier,
+            "n_regurgitated": n_hit,
+            "rate": float(n_hit / n_tier),
+        }
+    overall_rate = (
+        float(sum(overall_flags) / len(overall_flags)) if overall_flags else float("nan")
+    )
 
     control_regurg = [
         bool((row.get("regurgitation") or {}).get("regurgitated"))
         for row, c in zip(per_canary, canaries)
-        if not c.get("included")
+        if not c.get("included") and regurgitation_was_evaluated(row)
     ]
 
     def _headline_score_for_text(text: str) -> float:
@@ -782,9 +840,17 @@ def run_audit(
             ),
             "audit_seeds": seed_list,
             "deterministic_components": (
-                "canary likelihood scoring (teacher-forced forward passes) and "
-                "regurgitation generation (greedy decoding) are deterministic "
-                "given the trained model and were computed once"
+                (
+                    "canary likelihood scoring (teacher-forced forward passes) and "
+                    "regurgitation generation (greedy decoding) are deterministic "
+                    "given the trained model and were computed once"
+                )
+                if regurgitation_execution.get("status") == "executed"
+                else (
+                    "canary likelihood scoring (teacher-forced forward passes) is "
+                    "deterministic given the trained model and was computed once; "
+                    "regurgitation generation was not run (skip_generation)."
+                )
             ),
             "variance": variance,
             "real_records_per_seed": real_per_seed,
@@ -845,16 +911,39 @@ def run_audit(
     for row, canary in zip(per_canary, canaries):
         if not canary.get("included"):
             continue
+        if not regurgitation_was_evaluated(row):
+            continue
         by_prefix = (row.get("regurgitation") or {}).get("by_prefix") or []
         if any(bool(p.get("exact")) for p in by_prefix):
             n_exact += 1
     n_reg_members = len(overall_flags)
-    exact_wording = (
-        f"{n_exact}/{n_reg_members} under this prefix/decoding/exact-match protocol"
-        if n_reg_members
-        else "generation skipped or no inserted members"
-    )
+    skip_regurg = regurgitation_execution.get("status") != "executed"
+    if skip_regurg:
+        exact_wording = "not run; no regurgitation measurement in this report"
+        regurg_note = (
+            "Regurgitation was not run in this audit (skip_generation=true). "
+            "This is the absence of a measurement, not a zero-detection result, "
+            "and not a claim of no extraction risk."
+        )
+    elif n_reg_members:
+        exact_wording = (
+            f"{n_exact}/{n_reg_members} under this prefix/decoding/exact-match protocol"
+        )
+        regurg_note = (
+            f"{exact_wording}. This is not a claim of no extraction risk; "
+            "BLEU/NED flags remain supplementary. 1x canaries are MIA-tier only; "
+            "verbatim regurgitation is not expected from a single effective occurrence."
+        )
+    else:
+        exact_wording = "generation skipped or no inserted members"
+        regurg_note = (
+            f"{exact_wording}. This is not a claim of no extraction risk; "
+            "BLEU/NED flags remain supplementary. 1x canaries are MIA-tier only; "
+            "verbatim regurgitation is not expected from a single effective occurrence."
+        )
+    n_regurgitated = int(sum(overall_flags)) if overall_flags else 0
     regurgitation = {
+        "execution": dict(regurgitation_execution),
         "prefix_policy": {
             "kind": "secret_prefix_fractions",
             "fractions": list(prefix_fractions),
@@ -874,27 +963,35 @@ def run_audit(
         },
         "overall": {
             "n": n_reg_members,
-            "n_regurgitated": int(sum(overall_flags)) if overall_flags else 0,
+            "n_regurgitated": n_regurgitated,
             "rate": overall_rate,
         },
         "by_tier": by_tier,
         "prefix_fractions": list(prefix_fractions),
         "thresholds": {"exact": True, "bleu": 0.75, "ned": 0.10},
-        "note": (
-            f"{exact_wording}. This is not a claim of no extraction risk; "
-            "BLEU/NED flags remain supplementary. 1x canaries are MIA-tier only; "
-            "verbatim regurgitation is not expected from a single effective occurrence."
-        ),
+        "note": regurg_note,
     }
+    control_regurg_rate = (
+        float(sum(control_regurg) / len(control_regurg)) if control_regurg else float("nan")
+    )
+    neg_note = (
+        "Held-out / never-inserted canaries. Published calibration anchors: "
+        "cross-model false-extraction floor ~6% (Carlini 2022); pre-FT exact-match "
+        "baseline <0.06% (Bossy 2025). Those numbers are literature, not this run."
+    )
+    if skip_regurg:
+        neg_note += " Regurgitation was not tested for these controls in this run."
     negative_controls = {
         "n": len(controls),
         "mean_headline_score": float(np.mean(control_scores)) if control_scores else float("nan"),
-        "regurgitation_rate": float(np.mean(control_regurg)) if control_regurg else float("nan"),
-        "note": (
-            "Held-out / never-inserted canaries. Published calibration anchors: "
-            "cross-model false-extraction floor ~6% (Carlini 2022); pre-FT exact-match "
-            "baseline <0.06% (Bossy 2025). Those numbers are literature, not this run."
-        ),
+        "regurgitation_rate": control_regurg_rate,
+        "regurgitation": {
+            "execution": dict(regurgitation_execution),
+            "n_evaluated": len(control_regurg),
+            "n_regurgitated": int(sum(control_regurg)) if control_regurg else 0,
+            "rate": control_regurg_rate,
+        },
+        "note": neg_note,
     }
 
     adapter_info = None

@@ -400,7 +400,14 @@ def generate_canary_completions(
 ) -> dict[str, Any]:
     ids = list(secret_token_ids) or encode_ids(tokenizer, secret, add_special_tokens=False)
     if len(ids) < 2:
-        return {"by_prefix": [], "regurgitated": False}
+        return {
+            "by_prefix": [],
+            "regurgitated": None,
+            "execution": {
+                "status": "not_applicable",
+                "reason": "secret_too_short_for_prefix_split",
+            },
+        }
     results = []
     any_hit = False
     for frac in prefix_fractions:

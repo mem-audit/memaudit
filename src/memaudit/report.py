@@ -1,5 +1,11 @@
 """Versioned JSON report (schema v1.x). Additive-only within a major version.
 
+Schema 1.3.0 adds (additive on 1.2.0): ``regurgitation.execution`` and the
+matching execution dimension on attack coverage, negative controls, and
+``threat_model.executed`` / ``not_executed``. ``rate`` is ``null`` when
+regurgitation was not run; a genuine zero-detection run still reports
+``0.0``.
+
 Schema 1.2.0 adds (all additive on 1.1.0): ``audit_profile``, top-level
 ``canaries`` provenance, ``membership.by_repetition``,
 ``membership.calibration_stability``, structured regurgitation protocol
@@ -17,9 +23,9 @@ from typing import Any
 
 from memaudit.constants import (
     HEADLINE_ATTACK,
-    LIMITATIONS_STATEMENT,
     SCHEMA_VERSION,
     TOOL_VERSION,
+    limitations_statement,
 )
 from memaudit.compliance import build_compliance_annex, normalize_release_context
 from memaudit.exceptions import MemauditAuditError
@@ -66,7 +72,21 @@ def build_report(
         exact_dup_rate=(real_records or {}).get("exact_dup_rate"),
         embeddings_trainable=(pre.get("embeddings") or {}).get("trainable"),
         extra_warnings=warnings,
+        regurgitation_execution=regurgitation.get("execution"),
     )
+    reg_exec = regurgitation.get("execution") or {}
+    reg_status = reg_exec.get("status") or "executed"
+    if reg_status == "executed":
+        executed_attacks = ["membership_inference", "regurgitation"]
+        not_executed_attacks: list[Any] = []
+    else:
+        executed_attacks = ["membership_inference"]
+        not_executed_attacks = [
+            {
+                "attack": "regurgitation",
+                "reason": reg_exec.get("reason") or "not_run",
+            }
+        ]
     created_at = utc_now()
     tool_version = package_version() or TOOL_VERSION
     context = normalize_release_context(release_context)
@@ -95,9 +115,11 @@ def build_report(
             "standard": "EDPB Opinion 28/2024  para 55/ para 58",
             "in_scope": ["membership_inference", "regurgitation"],
             "out_of_scope": ["inversion", "reconstruction", "attribute_inference", "exfiltration"],
+            "executed": executed_attacks,
+            "not_executed": not_executed_attacks,
             "note": (
-                "Membership and regurgitation measure different harms and may disagree "
-                "(goldfish-trained models, head-only fine-tunes, high-rank LoRA)."
+                "'in scope' states what this tool can test; 'executed' states what "
+                "this report actually tested."
             ),
         },
         "attack_coverage": {
@@ -131,6 +153,7 @@ def build_report(
                 },
                 "match_rule": regurgitation.get("match_rule") or "exact",
                 "thresholds": {"bleu": 0.75, "sliding_window_ned": 0.10},
+                "execution": regurgitation.get("execution") or {"status": "executed"},
             },
         },
         "membership": membership,
@@ -155,7 +178,7 @@ def build_report(
         "compliance_annex": annex,
         "preflight": pre,
         "recommendations": recs,
-        "limitations": LIMITATIONS_STATEMENT,
+        "limitations": limitations_statement(executed_attacks),
         "provenance": provenance or {},
         "per_canary": per_canary or [],
         "local_only": True,

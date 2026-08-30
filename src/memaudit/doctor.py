@@ -8,6 +8,32 @@ from pathlib import Path
 from typing import Any
 
 
+def _schema_tuple(schema: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for part in str(schema).split("."):
+        try:
+            parts.append(int(part))
+        except ValueError:
+            break
+    return tuple(parts)
+
+
+def _schema_at_least(schema: str, minimum: str) -> bool:
+    a = _schema_tuple(schema)
+    b = _schema_tuple(minimum)
+    if not a or not b:
+        return False
+    n = max(len(a), len(b))
+    return a + (0,) * (n - len(a)) >= b + (0,) * (n - len(b))
+
+
+def _regurg_display(obj: dict[str, Any]) -> Any:
+    exec_st = ((obj.get("regurgitation") or {}).get("execution") or {}).get("status")
+    if exec_st and exec_st != "executed":
+        return "not_run"
+    return (obj.get("regurgitation") or {}).get("overall", {}).get("rate")
+
+
 REQUIRED_REPORT_KEYS = (
     "schema_version",
     "tool_version",
@@ -100,6 +126,10 @@ def validate_report(obj: dict[str, Any]) -> list[str]:
     if mem.get("headline_valid") and mem.get("n_controls", 0) < 100:
         failures.append("headline_valid is true but n_controls < 100 (product lie)")
     schema = str(obj.get("schema_version") or "")
+    if _schema_at_least(schema, "1.3.0"):
+        exec_st = ((obj.get("regurgitation") or {}).get("execution") or {}).get("status")
+        if not exec_st:
+            failures.append("regurgitation.execution.status missing (required since schema 1.3.0)")
     if schema.startswith("1.") and not schema.startswith("1.0"):
         # schema 1.1+ artifacts must carry the compliance annex and self-hash
         if "compliance_annex" not in obj:
@@ -121,7 +151,7 @@ def validate_report(obj: dict[str, Any]) -> list[str]:
         _ok(
             f"report schema {obj.get('schema_version')} "
             f"tpr={mem.get('tpr_at_1pct_fpr')} valid={mem.get('headline_valid')} "
-            f"regurg={(obj.get('regurgitation') or {}).get('overall', {}).get('rate')}"
+            f"regurg={_regurg_display(obj)}"
         )
     return failures
 

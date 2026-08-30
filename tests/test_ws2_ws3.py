@@ -124,7 +124,7 @@ def test_run_audit_emits_ws2_fields(tokenizer, tiny_model, tmp_path):
         dataset=ds,
         ref="none",
         real_sample=8,
-        skip_generation=True,
+        skip_generation=False,
         output_path=tmp_path / "r.json",
     )
     mem = report["membership"]

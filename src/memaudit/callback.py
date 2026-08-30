@@ -40,6 +40,10 @@ class MemorizationAuditCallback(TrainerCallback):
         Default Min-K%++.
     output_dir
         Defaults to ``TrainingArguments.output_dir``.
+    skip_generation
+        If True, skip prefix-prompted regurgitation generation. The report
+        records ``execution.status=not_run`` and null rates rather than a
+        measured zero.
     """
 
     def __init__(

@@ -226,17 +226,25 @@ def _print_sales_summary(report: dict[str, Any]) -> None:
         if mem.get("warning"):
             print(f"  note: {mem['warning']}")
     overall = reg.get("overall") or {}
-    print(
-        f"regurgitation:    {overall.get('n_regurgitated')}/{overall.get('n')} "
-        f"rate={overall.get('rate')}"
+    exec_st = (reg.get("execution") or {}).get("status") or "executed"
+    if exec_st != "executed":
+        reason = (reg.get("execution") or {}).get("reason") or exec_st
+        print(f"regurgitation:    not run ({reason})")
+    else:
+        print(
+            f"regurgitation:    {overall.get('n_regurgitated')}/{overall.get('n')} "
+            f"rate={overall.get('rate')}"
+        )
+        by_tier = reg.get("by_tier") or {}
+        if by_tier:
+            bits = ", ".join(f"{k}x={v.get('rate')}" for k, v in by_tier.items())
+            print(f"  by tier:        {bits}")
+    regurg_rate_disp = (
+        "not_run" if exec_st != "executed" else neg.get("regurgitation_rate")
     )
-    by_tier = reg.get("by_tier") or {}
-    if by_tier:
-        bits = ", ".join(f"{k}x={v.get('rate')}" for k, v in by_tier.items())
-        print(f"  by tier:        {bits}")
     print(
         f"neg. controls:    n={neg.get('n')}  "
-        f"regurg_rate={neg.get('regurgitation_rate')}  "
+        f"regurg_rate={regurg_rate_disp}  "
         f"mean_score={neg.get('mean_headline_score')}"
     )
     print(f"audit wall-clock: {report.get('audit_seconds')} s")
@@ -359,9 +367,22 @@ def write_summary_md(report: dict[str, Any], path: str | Path) -> Path:
         f"- method: `{mem.get('headline_attack')}`",
         f"- TPR @ 1% FPR: {mem.get('tpr_at_1pct_fpr')} (valid={mem.get('headline_valid')})  "
         f"CI [{mem.get('ci_low')}, {mem.get('ci_high')}]",
-        f"- regurgitation overall: {((reg.get('overall') or {}).get('rate'))}",
-        f"- regurgitation by tier: {json.dumps(reg.get('by_tier') or {})}",
-        f"- negative-control regurgitation rate: {neg.get('regurgitation_rate')}",
+        (
+            f"- regurgitation: not run "
+            f"({(reg.get('execution') or {}).get('reason') or (reg.get('execution') or {}).get('status')})"
+            if (reg.get("execution") or {}).get("status") not in (None, "executed")
+            else f"- regurgitation overall: {((reg.get('overall') or {}).get('rate'))}"
+        ),
+        (
+            "- regurgitation by tier: not run"
+            if (reg.get("execution") or {}).get("status") not in (None, "executed")
+            else f"- regurgitation by tier: {json.dumps(reg.get('by_tier') or {})}"
+        ),
+        (
+            "- negative-control regurgitation rate: not run"
+            if (reg.get("execution") or {}).get("status") not in (None, "executed")
+            else f"- negative-control regurgitation rate: {neg.get('regurgitation_rate')}"
+        ),
         f"- audit wall-clock: {report.get('audit_seconds')} s",
         f"- train wall-clock: {demo.get('train_seconds')} s",
         f"- train loss: {demo.get('train_loss')}",

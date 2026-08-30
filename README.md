@@ -228,7 +228,7 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 
 ## What the report means
 
-`memaudit-report.json` is schema `1.2.0` (`schema_version`; additive on `1.1.0` / `1.0.0` -- every earlier field is still there). Headline fields:
+`memaudit-report.json` is schema `1.3.0` (`schema_version`; additive on `1.2.0` / `1.1.0` / `1.0.0` -- every earlier field is still there). Headline fields:
 
 | Field | Meaning |
 |---|---|
@@ -241,10 +241,11 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 | `membership.auc` | Secondary. Average-case; not the headline |
 | `audit_profile` | `smoke` (refuses TPR@FPR headline) / `routine` / `powered` (or `custom` if inferred) plus `target_fpr` |
 | `canaries.requested_family` / `actual_generator` | Requested construction vs what actually drew the tokens (a `high_ppl` run can be `uniform_vocab`) |
-| `regurgitation.overall.rate` | Fraction of inserted canaries the model completes from a 25% / 50% prefix (exact, BLEU>0.75, or sliding-window NED<=0.1) |
-| `regurgitation.detected` | Protocol-scoped exact-match count: "N/M under this prefix/decoding/exact-match protocol" -- never "no extraction risk" |
-| `regurgitation.by_tier` | Same rate at repetition 1 / 4 / 16. 1x is MIA-tier only |
-| `negative_controls` | Never-inserted canaries. Always run |
+| `regurgitation.execution` | Run-level execution state: `executed` or `not_run` (`reason: skip_generation`). When not run, numerics are unmeasured (`rate: null`) and skipped rows do not enter a denominator |
+| `regurgitation.overall.rate` | Fraction of inserted canaries the model completes from a 25% / 50% prefix (exact, BLEU>0.75, or sliding-window NED<=0.1). `null` when regurgitation was not run (`skip_generation`) |
+| `regurgitation.detected` | Protocol-scoped exact-match count: "N/M under this prefix/decoding/exact-match protocol" -- never "no extraction risk". `n: 0` / `rate: null` when not run |
+| `regurgitation.by_tier` | Same rate at repetition 1 / 4 / 16. 1x is MIA-tier only. Empty object when regurgitation was not run |
+| `negative_controls` | Never-inserted canaries. Membership scores always run; regurgitation on controls is skipped when `--skip-generation` is set (`regurgitation_rate: null`) |
 | `real_records.set_level` | Inferential member-vs-nonmember test **only** when `held_out=` is supplied (`comparison_population: held_out`). Otherwise descriptive ranking of a training-split sample; no FPR, not evidence about any individual record |
 | `audit_seconds` | Wall-clock of the audit engine |
 | `recommendations` | Heuristics (dedup -> fewer epochs -> cooler LoRA -> ...). Not a compliance program |
@@ -258,7 +259,7 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 
 Scores are computed on the **secret span only**. Full-sequence loss collapses detection.
 
-## Compliance annex, verify, multi-seed (schema 1.2.0)
+## Compliance annex, verify, multi-seed (schema 1.3.0)
 
 **EDPB-mapped annex.** Every report carries a `compliance_annex` implementing the [EDPB Opinion 28/2024](https://www.edpb.europa.eu/) para 46 / para 55 / para 58 mapping: an attack-coverage table (membership inference para 55(i) and regurgitation para 55(iii) **in scope** with methods; attribute inference, exfiltration para 55(ii), model inversion para 55(iv), reconstruction para 55(v) explicitly **out of scope**), a threat model per attack and per canary family used (attacker access + assumptions, sourced from the published literature), test-scope metadata (n canaries, reps grid, seeds, dataset rows, negative-control results, run date, tool version), the user-declared release context, and a limitations statement quoting para 55: *"successful testing which covers widely known, state-of-the-art attacks can only be evidence for the resistance to those attacks."* The annex is documented test evidence -- it does **not** constitute a determination of anonymity or GDPR compliance. Render it as markdown for a DPO:
 
