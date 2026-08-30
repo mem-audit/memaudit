@@ -220,15 +220,10 @@ def example_text(example: Mapping[str, Any], fmt: str) -> str:
 
 
 def package_version() -> str:
-    """Installed distribution version, falling back to the in-tree constant."""
-    try:
-        from importlib.metadata import version
+    """In-tree ``TOOL_VERSION``. Dist metadata can lag an editable install."""
+    from memaudit.constants import TOOL_VERSION
 
-        return version("memaudit")
-    except Exception:
-        from memaudit.constants import TOOL_VERSION
-
-        return TOOL_VERSION
+    return TOOL_VERSION
 
 
 def sha256_file(path: str | Path, chunk_size: int = 1 << 20) -> str:

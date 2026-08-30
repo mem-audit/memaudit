@@ -235,7 +235,7 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 | `membership.headline_attack` | Pre-declared **base-calibrated Min-K%++** (same two forwards also yield masked loss, loss ratio, Min-K%) |
 | `membership.scorer` | Pluggable backend provenance: `{name, version}` (default `min_k_plus_plus`; EZ-MIA is a documented future file, not shipped) |
 | `membership.tpr_at_1pct_fpr` | Detection rate on inserted canaries at the profile target FPR (default 1%), thresholded on **held-out canary** controls. `null` when `headline_valid=false` (underpowered controls, or `audit_profile=smoke`) |
-| `membership.by_repetition` | Same threshold, split by 1x / 4x / 16x / pooled. 1x is a single-exposure probe; pooled is the powered-audit headline |
+| `membership.by_repetition` | Same threshold, split by 1x / 4x / 16x / pooled. 1x is a single-exposure probe; pooled is the powered-audit headline. Per-tier `detected` / `tpr` are `null` when the pooled threshold is unidentified (`threshold_identified: false`), not a fabricated 0.0 |
 | `membership.calibration_stability` | Bootstrap-resample controls; how much the FPR threshold and TPR move (separate from the member-side CI) |
 | `membership.ci_low` / `ci_high` | Clopper-Pearson 95% interval. With tens of canaries this interval is wide  -  that is honest |
 | `membership.auc` | Secondary. Average-case; not the headline |
@@ -246,7 +246,9 @@ memaudit audit --model ./out --canary-set ./out/memaudit-manifest.json \
 | `regurgitation.detected` | Protocol-scoped exact-match count: "N/M under this prefix/decoding/exact-match protocol" -- never "no extraction risk". `n: 0` / `rate: null` when not run |
 | `regurgitation.by_tier` | Same rate at repetition 1 / 4 / 16. 1x is MIA-tier only. Empty object when regurgitation was not run |
 | `negative_controls` | Never-inserted canaries. Membership scores always run; regurgitation on controls is skipped when `--skip-generation` is set (`regurgitation_rate: null`) |
-| `real_records.set_level` | Inferential member-vs-nonmember test **only** when `held_out=` is supplied (`comparison_population: held_out`). Otherwise descriptive ranking of a training-split sample; no FPR, not evidence about any individual record |
+| `real_records.execution` | `executed` when ranking ran; `not_run` with `reason: no_dataset` or `real_sample_zero` when it did not. A missing block on a hand-built report is `not_recorded` in the annex |
+| `real_records.exact_dup_rate` | Exact-duplicate rate on extractable training texts. `null` when no extractable texts were found (not a measured 0.0) |
+| `real_records.set_level` | Inferential member-vs-nonmember test **only** when `held_out=` is supplied (`comparison_population: held_out`). Otherwise `descriptive_ranking_only` or `ranking_only` (ran, but no comparison population -- not "skipped"). No FPR, not evidence about any individual record |
 | `audit_seconds` | Wall-clock of the audit engine |
 | `recommendations` | Heuristics (dedup -> fewer epochs -> cooler LoRA -> ...). Not a compliance program |
 | `compliance_annex` | EDPB Opinion 28/2024 mapping: attack-coverage table (para 55), threat models (para 58(c)), test scope, release context (para 46), limitations. New in 1.1.0 |

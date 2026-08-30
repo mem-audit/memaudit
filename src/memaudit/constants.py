@@ -8,6 +8,7 @@ from collections.abc import Sequence
 # execution dimension on attack coverage, negative controls, and
 # threat_model.executed / not_executed). rate is null when regurgitation
 # was not run; a genuine zero-detection run still reports 0.0.
+# The same vocabulary is used for real_records.execution and annex preflight.
 # 1.2.0: additive on 1.1.0 (audit_profile, canaries provenance block,
 # membership.by_repetition, calibration_stability, regurgitation protocol
 # fields, real-record inferential-vs-descriptive split, membership.scorer).

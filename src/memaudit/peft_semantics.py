@@ -743,18 +743,33 @@ def base_equivalence_guard(
                 diffs.append(float((d - ct).abs().max()))
         max_diff = max(diffs) if diffs else 0.0
 
-    verdict = "pass"
-    if max_diff is not None and max_diff > 0.0:
-        verdict = "warn" if max_diff <= float(atol_warn) else "fail"
+    compared = max_diff is not None
     if not restored:
         verdict = "fail"
+    elif not compared:
+        # Post-hoc CLI / no preflight capture: restored and adapter_active
+        # still ran, but the drift check against a capture did not.
+        # "pass" is load-bearing (gates a reference downgrade); do not claim it.
+        verdict = "not_run"
+    elif max_diff is not None and max_diff > 0.0:
+        verdict = "warn" if max_diff <= float(atol_warn) else "fail"
+    else:
+        verdict = "pass"
 
-    return {
+    out: dict[str, Any] = {
         "adapter_active": bool(adapter_active),
         "restored": bool(restored),
         "max_abs_logit_diff": max_diff,
+        "compared": compared,
         "verdict": verdict,
         "atol_warn": float(atol_warn),
         "n_probes": len(probes),
         "probe_texts": texts,
     }
+    if not compared:
+        out["reason"] = "no_preflight_capture"
+        out["note"] = (
+            "No preflight capture was compared; disable_adapter drift vs the "
+            "pre-train base was not checked. This is not a pass."
+        )
+    return out

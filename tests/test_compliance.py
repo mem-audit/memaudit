@@ -117,6 +117,10 @@ def test_annex_threat_models_for_used_families_only():
         assert row["source"]
     attacks = annex["threat_models"]["attacks"]
     assert "membership_inference" in attacks and "regurgitation" in attacks
+    assert (
+        attacks["membership_inference"]["edpb_class"]
+        == "para 55(i) attribute and membership inference"
+    )
     assert "grey-box" in attacks["membership_inference"]["attacker_access"]
     assert "black-box" in attacks["regurgitation"]["attacker_access"]
 

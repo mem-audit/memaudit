@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Report schema **1.3.0** (additive on 1.2.0): `regurgitation.execution` and matching `execution` blocks on per-canary rows, negative controls, attack coverage, and `threat_model.executed` / `not_executed`. A skipped generation run (`--skip-generation`) is recorded as `not_run` with `rate: null`, not as a measured zero. A genuine 0/N detection stays `0.0`.
+- Unmeasured siblings of that collapse (same contract): `exact_dup_rate` is `null` when no extractable training texts were found (not `0.0`); per-tier membership TPR is `null` when the pooled threshold is unidentified (no fabricated `0.0` + CI); `base_equivalence.verdict` is `not_run` when no preflight capture was compared (not `pass`); `real_records` carries `execution` (`no_dataset` / `real_sample_zero`) instead of a bare `null`; `set_level.kind` `ranking_only` replaces the colliding `skipped`; preflight `ran` / `not_run` is visible on the compliance annex; `reference.mode` is updated and a warning is emitted if `disable_adapter()` fails during scoring; reports stamp in-tree `TOOL_VERSION` (not stale editable-install dist metadata); para 55(i) threat-model label is "attribute and membership inference".
 
 ## 0.2.0 - 2026-08-30
 

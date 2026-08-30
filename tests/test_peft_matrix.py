@@ -372,6 +372,8 @@ def test_base_equivalence_guard_plain_lora(tokenizer):
     guard = base_equivalence_guard(wrapped, tokenizer, probe_texts=["hello world", "abc 123"])
     assert guard["restored"] is True
     assert guard["adapter_active"] is True
-    assert guard["verdict"] == "pass"
+    assert guard["compared"] is False
+    assert guard["verdict"] == "not_run"
+    assert guard.get("reason") == "no_preflight_capture"
     ok, _ = adapter_toggle_safe(inspect_embeddings(wrapped))
     assert ok is True

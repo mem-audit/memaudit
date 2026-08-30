@@ -4,7 +4,8 @@ Schema 1.3.0 adds (additive on 1.2.0): ``regurgitation.execution`` and the
 matching execution dimension on attack coverage, negative controls, and
 ``threat_model.executed`` / ``not_executed``. ``rate`` is ``null`` when
 regurgitation was not run; a genuine zero-detection run still reports
-``0.0``.
+``0.0``. Unmeasured siblings use the same vocabulary: ``real_records.execution``,
+per-tier ``threshold_identified``, and preflight ``ran`` on the annex.
 
 Schema 1.2.0 adds (all additive on 1.1.0): ``audit_profile``, top-level
 ``canaries`` provenance, ``membership.by_repetition``,
@@ -30,7 +31,7 @@ from memaudit.constants import (
 from memaudit.compliance import build_compliance_annex, normalize_release_context
 from memaudit.exceptions import MemauditAuditError
 from memaudit.recommendations import recommend
-from memaudit.utils import canonical_json, json_safe, package_version, sha256_json, sha256_text, write_json
+from memaudit.utils import canonical_json, json_safe, sha256_json, sha256_text, write_json
 
 
 def utc_now() -> str:
@@ -88,7 +89,8 @@ def build_report(
             }
         ]
     created_at = utc_now()
-    tool_version = package_version() or TOOL_VERSION
+    # In-tree constant wins over stale editable-install dist metadata (F8).
+    tool_version = TOOL_VERSION
     context = normalize_release_context(release_context)
     annex = build_compliance_annex(
         membership=membership,
@@ -100,6 +102,7 @@ def build_report(
         stability=stability,
         created_at=created_at,
         tool_version=tool_version,
+        preflight=pre,
     )
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,

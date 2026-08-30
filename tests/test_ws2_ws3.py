@@ -67,6 +67,7 @@ def test_membership_by_repetition_decomposes_pooled_threshold():
     assert out["1"]["meaning"] == "single-exposure probe"
     assert out["16"]["meaning"] == "high-exposure stress"
     assert out["pooled"]["meaning"] == "powered-audit headline"
+    assert out["1"]["threshold_identified"] is True
     assert 0.0 <= out["1"]["ci_low"] <= out["1"]["ci_high"] <= 1.0
 
 

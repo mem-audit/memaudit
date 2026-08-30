@@ -109,7 +109,7 @@ CANARY_FAMILY_THREAT_MODELS: dict[str, dict[str, str]] = {
 # and knowledge assumptions for each verdict tier.
 AUDIT_ATTACK_THREAT_MODELS: dict[str, dict[str, str]] = {
     "membership_inference": {
-        "edpb_class": "para 55(i) membership inference",
+        "edpb_class": "para 55(i) attribute and membership inference",
         "attacker_access": (
             "grey-box: per-token log-probability access to the fine-tuned model "
             "and to the pre-fine-tuning reference checkpoint"
@@ -256,8 +256,8 @@ def attack_coverage_table(
                 "(TPR at the profile target FPR + Clopper-Pearson 95% CI; "
                 "canaries detected at estimated FPR ≤ α by construction; "
                 "masked loss / loss ratio / Min-K% / Min-K%++ from the same "
-                "forward passes). Real-record ranking is descriptive unless a "
-                "genuine held-out population is supplied"
+                "forward passes). Real-record ranking, when sampled, is "
+                "descriptive unless a genuine held-out population is supplied"
             ),
         },
         {
@@ -304,6 +304,47 @@ def attack_coverage_table(
     ]
 
 
+def _preflight_annex(preflight: dict[str, Any] | None) -> dict[str, Any]:
+    """Honesty fields from preflight. Empty/missing → not_recorded (F6)."""
+    pre = preflight if isinstance(preflight, dict) else {}
+    if not pre:
+        return {
+            "ran": None,
+            "path": None,
+            "verification_unknown": None,
+            "note": None,
+            "execution": {"status": "not_recorded"},
+        }
+    ran = pre.get("ran")
+    if ran is True:
+        exec_state: dict[str, Any] = {"status": "executed", "reason": pre.get("path")}
+    elif ran is False:
+        exec_state = {
+            "status": "not_run",
+            "reason": pre.get("path") or "absent",
+            "note": pre.get("note"),
+        }
+    else:
+        exec_state = {"status": "not_recorded"}
+    return {
+        "ran": ran,
+        "path": pre.get("path"),
+        "verification_unknown": pre.get("verification_unknown"),
+        "note": pre.get("note"),
+        "execution": exec_state,
+    }
+
+
+def derive_real_records_execution(real_records: dict[str, Any] | None) -> dict[str, Any]:
+    """Resolve real-record execution: explicit field, else inferred (F4)."""
+    if not isinstance(real_records, dict) or not real_records:
+        return {"status": "not_recorded"}
+    existing = real_records.get("execution")
+    if isinstance(existing, dict) and existing.get("status"):
+        return dict(existing)
+    return {"status": "executed"}
+
+
 def build_compliance_annex(
     *,
     membership: dict[str, Any],
@@ -315,6 +356,7 @@ def build_compliance_annex(
     stability: dict[str, Any] | None,
     created_at: str,
     tool_version: str,
+    preflight: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the EDPB-mapped annex from already-computed report sections."""
     scope = dict(audit_scope or {})
@@ -405,8 +447,10 @@ def build_compliance_annex(
                 "detected": regurgitation.get("detected"),
             },
             "real_records_set_level": (real_records or {}).get("set_level"),
+            "real_records_execution": derive_real_records_execution(real_records),
             "stability": (stability or {}).get("variance"),
         },
+        "preflight": _preflight_annex(preflight),
         "release_context": {
             "edpb_ref": "para 46",
             "declared": context,
@@ -441,7 +485,13 @@ def _attach_execution(annex: dict[str, Any], report: dict[str, Any]) -> dict[str
     if "execution" not in reg:
         reg["execution"] = exec_state
     qr["regurgitation"] = reg
+    if "real_records_execution" not in qr:
+        qr["real_records_execution"] = derive_real_records_execution(
+            report.get("real_records")
+        )
     out["quantified_results"] = qr
+    if "preflight" not in out:
+        out["preflight"] = _preflight_annex(report.get("preflight"))
     return out
 
 
@@ -468,6 +518,7 @@ def ensure_annex(report: dict[str, Any]) -> dict[str, Any]:
         stability=report.get("stability"),
         created_at=report.get("created_at") or "",
         tool_version=report.get("tool_version") or "",
+        preflight=report.get("preflight"),
     )
 
 
@@ -518,6 +569,22 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
     add("## 1. What this document is (and is not)")
     add("")
     add(annex.get("disclaimer") or "")
+    add("")
+
+    pre_ann = annex.get("preflight") or {}
+    pre_exec = (pre_ann.get("execution") or {}).get("status")
+    add("## Preflight")
+    add("")
+    if pre_exec == "executed":
+        path = pre_ann.get("path") or "callback"
+        add(f"Preflight **ran** (`{path}`). Supervision and survival evidence is in the report `preflight` block.")
+    elif pre_exec == "not_run":
+        note = pre_ann.get("note") or (
+            "Preflight did not run. This is not a pass."
+        )
+        add(f"**NOT RUN.** {note}")
+    else:
+        add("Preflight execution was **NOT RECORDED** in this report.")
     add("")
 
     add("## 2. Release context (para 46)")
@@ -574,12 +641,24 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
         block = by_rep.get(tier)
         if not isinstance(block, dict):
             continue
-        add(
-            f"| Membership at {tier} "
-            f"({block.get('meaning') or 'tier'}) | "
-            f"{_fmt(block.get('detected'))}/{_fmt(block.get('n'))} "
-            f"(TPR {_fmt(block.get('tpr'))}) |"
+        tpr = block.get("tpr")
+        identified = block.get("threshold_identified")
+        unmeasured = identified is False or tpr is None or (
+            isinstance(tpr, float) and tpr != tpr
         )
+        if unmeasured and tier != "pooled":
+            add(
+                f"| Membership at {tier} "
+                f"({block.get('meaning') or 'tier'}) | "
+                "threshold unidentified — no per-tier detection count |"
+            )
+        else:
+            add(
+                f"| Membership at {tier} "
+                f"({block.get('meaning') or 'tier'}) | "
+                f"{_fmt(block.get('detected'))}/{_fmt(block.get('n'))} "
+                f"(TPR {_fmt(block.get('tpr'))}) |"
+            )
     overall = reg.get("overall") or {}
     detected = reg.get("detected") or {}
     reg_exec = reg.get("execution") or {}
@@ -603,7 +682,15 @@ def render_annex_markdown(report: dict[str, Any]) -> str:
             f"regurgitation {_fmt(neg.get('regurgitation_rate'))}, "
             f"mean headline score {_fmt(neg.get('mean_headline_score'))} |")
     set_level = (annex.get("quantified_results") or {}).get("real_records_set_level") or {}
-    if set_level.get("inferential"):
+    real_exec = (annex.get("quantified_results") or {}).get("real_records_execution") or {}
+    if real_exec.get("status") == "not_run":
+        reason = real_exec.get("reason") or "not_run"
+        add(
+            f"| Real-record ranking | **NOT RUN** ({reason}) — no measurement |"
+        )
+    elif real_exec.get("status") == "not_recorded":
+        add("| Real-record ranking | **NOT RECORDED** in this report |")
+    elif set_level.get("inferential"):
         add(f"| Real-record set-level test (user-supplied held-out) | p={_fmt(set_level.get('p_value'), 4)} "
             f"(set-level only; not evidence about any individual record) |")
     elif set_level:

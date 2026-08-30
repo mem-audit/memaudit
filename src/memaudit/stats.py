@@ -173,37 +173,60 @@ def membership_by_repetition(
     for tier in sorted(by_tier):
         scores = by_tier[tier]
         n = len(scores)
-        n_det = int(sum(s >= threshold for s in scores)) if thresh_ok else 0
-        tpr = float(n_det / n) if n else float("nan")
-        ci_low, ci_high = clopper_pearson(n_det, n) if n else (float("nan"), float("nan"))
-        out[str(tier)] = {
+        if thresh_ok:
+            n_det: int | None = int(sum(s >= threshold for s in scores))
+            tpr = float(n_det / n) if n else float("nan")
+            ci_low, ci_high = clopper_pearson(n_det, n) if n else (float("nan"), float("nan"))
+        else:
+            # Unidentified threshold: do not fabricate detected=0 / tpr=0.0
+            # with a Clopper-Pearson CI. Same shape as a skipped measurement.
+            n_det = None
+            tpr = float("nan")
+            ci_low, ci_high = float("nan"), float("nan")
+        row: dict[str, Any] = {
             "n": n,
             "detected": n_det,
             "tpr": tpr,
             "ci_low": ci_low,
             "ci_high": ci_high,
             "meaning": REPETITION_TIER_MEANING.get(tier, "repetition-tier probe"),
+            "threshold_identified": bool(thresh_ok),
         }
+        if not thresh_ok:
+            row["note"] = (
+                "Pooled control threshold is unidentified; this tier has no "
+                "detection count. This is not a zero-TPR result."
+            )
+        out[str(tier)] = row
     n_p = pooled_n_members
     d_p = pooled_n_detected
     if n_p is None:
         n_p = sum(b["n"] for b in out.values())
     if d_p is None:
-        d_p = sum(b["detected"] for b in out.values())
-    tpr_p = pooled_tpr if pooled_tpr is not None else (float(d_p / n_p) if n_p else float("nan"))
+        if thresh_ok:
+            d_p = sum(int(b["detected"] or 0) for b in out.values())
+        else:
+            d_p = None
+    if pooled_tpr is not None:
+        tpr_p = pooled_tpr
+    elif n_p and d_p is not None:
+        tpr_p = float(d_p / n_p)
+    else:
+        tpr_p = float("nan")
     if pooled_ci is not None:
         ci_l, ci_h = pooled_ci
-    elif n_p:
+    elif n_p and d_p is not None:
         ci_l, ci_h = clopper_pearson(int(d_p), int(n_p))
     else:
         ci_l, ci_h = float("nan"), float("nan")
     out["pooled"] = {
         "n": int(n_p),
-        "detected": int(d_p),
+        "detected": None if d_p is None else int(d_p),
         "tpr": tpr_p,
         "ci_low": ci_l,
         "ci_high": ci_h,
         "meaning": REPETITION_TIER_MEANING["pooled"],
+        "threshold_identified": bool(thresh_ok),
     }
     out["note"] = (
         "Tiers share the pooled control-calibrated threshold. "

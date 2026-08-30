@@ -204,7 +204,8 @@ def test_base_equivalence_guard_quantized_toggle_bit_exact(qlora, tokenizer):
     guard = base_equivalence_guard(qlora.model, tokenizer, probe_texts=["hello world", "abc 123"])
     assert guard["adapter_active"] is True
     assert guard["restored"] is True
-    assert guard["verdict"] == "pass"
+    assert guard["compared"] is False
+    assert guard["verdict"] == "not_run"
 
     capture = capture_disabled_logits(qlora.model, tokenizer)
     assert capture is not None
@@ -253,7 +254,7 @@ def test_run_audit_end_to_end_on_4bit(qlora, tokenizer, tmp_path):
     )
     assert (tmp_path / "memaudit-report.json").is_file()
     assert report["reference"]["mode"] == "disable_adapter"
-    assert report["preflight"]["base_equivalence"]["verdict"] == "pass"
+    assert report["preflight"]["base_equivalence"]["verdict"] == "not_run"
     assert report["membership"]["headline_attack"] == HEADLINE_ATTACK
     assert report["membership"]["n_members"] == 2
     assert report["membership"]["n_controls"] == 3

@@ -78,6 +78,18 @@ _REGURGITATION_SKIP_WARNING = (
     "This report contains no regurgitation measurement; it is not a "
     "zero-detection result."
 )
+_EXACT_DUP_UNMEASURED_NOTE = (
+    "Exact-duplicate rate was not measured (no extractable training texts). "
+    "This is not a zero-duplication result."
+)
+_REAL_RECORDS_NOT_RUN_NOTE = (
+    "Real-record ranking was not executed in this run. This is not a "
+    "zero-leakage result and not a pass."
+)
+_TOGGLE_FAIL_WARNING = (
+    "disable_adapter() failed during scoring. reference.mode records the "
+    "fallback actually used; per-canary ref_source is authoritative."
+)
 
 
 def regurgitation_execution_from_skip(skip_generation: bool) -> dict[str, Any]:
@@ -97,6 +109,60 @@ def regurgitation_was_evaluated(row: Mapping[str, Any]) -> bool:
     if not isinstance(block, Mapping):
         return False
     return (block.get("execution") or {}).get("status") == "executed"
+
+
+def real_records_not_run(reason: str) -> dict[str, Any]:
+    """Structured block when real-record ranking did not run (F4)."""
+    return {
+        "execution": {
+            "status": "not_run",
+            "reason": reason,
+            "note": _REAL_RECORDS_NOT_RUN_NOTE,
+        },
+        "n_train_sampled": 0,
+        "n_comparison_split": 0,
+        "comparison_population": "none",
+        "exact_dup_rate": None,
+        "set_level": {
+            "kind": "not_run",
+            "inferential": False,
+            "p_value": None,
+            "note": _REAL_RECORDS_NOT_RUN_NOTE,
+        },
+    }
+
+
+def reconcile_reference_mode(
+    ref_meta: dict[str, Any],
+    per_canary: list[dict[str, Any]],
+    toggle_failures: list[str],
+    *,
+    has_ref_model: bool,
+) -> tuple[dict[str, Any], str | None]:
+    """If disable_adapter failed, stamp the mode that was actually used (F7).
+
+    Returns ``(ref_meta, headline_fallback_or_None)``. Headline fallback is
+    ``HEADLINE_ATTACK_FALLBACK`` when scoring became target-only.
+    """
+    if ref_meta.get("mode") != "disable_adapter":
+        return ref_meta, None
+    sources = {row.get("ref_source") for row in per_canary if row.get("ref_source")}
+    if "disable_adapter" in sources:
+        return ref_meta, None
+    if not sources and not toggle_failures:
+        return ref_meta, None
+    if "separate_reference" in sources or (has_ref_model and sources != {"target_only"}):
+        actual = "separate_reference"
+        headline = None
+    else:
+        actual = "target_only"
+        headline = HEADLINE_ATTACK_FALLBACK
+    ref_meta = dict(ref_meta)
+    ref_meta["downgraded_from"] = "disable_adapter"
+    ref_meta["mode"] = actual
+    if toggle_failures:
+        ref_meta["toggle_error"] = toggle_failures[0]
+    return ref_meta, headline
 
 
 def validate_manifest_for_audit(manifest: dict[str, Any]) -> None:
@@ -183,6 +249,7 @@ def _toggle_or_extract_ref(
     *,
     ref_model: Any | None,
     toggle_safe: bool,
+    toggle_failures: list[str] | None = None,
 ) -> tuple[TokenSignals, TokenSignals | None, str]:
     """``extract_fn(model, cache_tag)`` — tag distinguishes disable_adapter state."""
     ft = extract_fn(model, "target")
@@ -191,8 +258,9 @@ def _toggle_or_extract_ref(
             with model.disable_adapter():
                 ref = extract_fn(model, "disable_adapter")
             return ft, ref, "disable_adapter"
-        except Exception:
-            pass
+        except Exception as exc:
+            if toggle_failures is not None:
+                toggle_failures.append(f"{type(exc).__name__}: {exc}")
     if ref_model is not None:
         return ft, extract_fn(ref_model, "separate_reference"), "separate_reference"
     return ft, None, "target_only"
@@ -252,7 +320,7 @@ def _sample_real_texts(
     n: int,
     seed: int,
     held_out: Any | None,
-) -> tuple[list[str], list[str], float, str]:
+) -> tuple[list[str], list[str], float | None, str]:
     fmt = manifest.get("fmt") or "text"
     secrets = {c.get("secret") for c in manifest.get("canaries") or [] if c.get("secret")}
     texts: list[str] = []
@@ -262,7 +330,7 @@ def _sample_real_texts(
             continue
         texts.append(blob)
     rng = np.random.default_rng(seed)
-    exact_dup = 0.0
+    exact_dup: float | None = None
     if texts:
         uniq = len(set(texts))
         exact_dup = 1.0 - uniq / len(texts)
@@ -286,7 +354,7 @@ def _sample_real_texts(
         held = texts[cut:]
         texts = texts[:cut]
         comparison_population = "training_split"
-    return texts, held, float(exact_dup), comparison_population
+    return texts, held, exact_dup, comparison_population
 
 
 def run_audit(
@@ -498,6 +566,11 @@ def run_audit(
                 f"preflight capture by {guard.get('max_abs_logit_diff')} "
                 f"(≤ {guard.get('atol_warn')} WARN headroom)."
             )
+        elif guard.get("verdict") == "not_run":
+            audit_warnings.append(
+                "base-equivalence drift check was not run (no preflight "
+                "capture). verdict is not a pass."
+            )
         if guard.get("adapter_active") is False:
             audit_warnings.append(
                 "Adapter appears inert (enabled logits == disabled). "
@@ -520,6 +593,7 @@ def run_audit(
     per_canary: list[dict[str, Any]] = []
     member_scores: list[float] = []
     control_scores: list[float] = []
+    toggle_failures: list[str] = []
 
     def extract_one(m, canary, cache_tag=""):
         return _extract_canary_signals(
@@ -544,6 +618,7 @@ def run_audit(
                 lambda m, tag="", c=canary: extract_one(m, c, cache_tag=tag),
                 ref_model=ref_model,
                 toggle_safe=use_toggle and is_peft_model(model),
+                toggle_failures=toggle_failures,
             )
             combined = _combine_with_scorer(scorer_obj, ft_sig, ref_sig, min_k_pct)
             if not custom_scorer and combined.get("headline_attack_used") != HEADLINE_ATTACK:
@@ -679,7 +754,8 @@ def run_audit(
                         cache=signals_cache,
                         cache_tag="disable_adapter",
                     )
-            except Exception:
+            except Exception as exc:
+                toggle_failures.append(f"{type(exc).__name__}: {exc}")
                 ref_sig = None
         elif ref_model is not None:
             ref_sig = extract_token_signals(
@@ -754,7 +830,7 @@ def run_audit(
             }
         else:
             set_level = {
-                "kind": "skipped",
+                "kind": "ranking_only",
                 "inferential": False,
                 "p_value": None,
                 "note": (
@@ -763,6 +839,7 @@ def run_audit(
                 ),
             }
         block: dict[str, Any] = {
+            "execution": {"status": "executed"},
             "sample_seed": int(sample_seed),
             "n_train_sampled": len(real_texts),
             "n_comparison_split": len(held_texts),
@@ -770,6 +847,8 @@ def run_audit(
             "exact_dup_rate": dup_rate,
             "set_level": set_level,
         }
+        if dup_rate is None:
+            block["exact_dup_note"] = _EXACT_DUP_UNMEASURED_NOTE
         if collect_ranked:
             block["ranked"] = ranked[: min(50, len(ranked))]
             block["redacted"] = not reveal
@@ -778,8 +857,14 @@ def run_audit(
     primary_real_seed = seed_list[0] if seed_list else int(manifest.get("seed") or 0)
     real_block: dict[str, Any] | None = None
     real_per_seed: list[dict[str, Any]] | None = None
-    if dataset is not None and real_sample and real_sample > 0:
+    if dataset is None:
+        real_block = real_records_not_run("no_dataset")
+    elif not real_sample or int(real_sample) <= 0:
+        real_block = real_records_not_run("real_sample_zero")
+    else:
         real_block = _real_block_for_seed(primary_real_seed, collect_ranked=True)
+        if real_block.get("exact_dup_rate") is None:
+            audit_warnings.append(_EXACT_DUP_UNMEASURED_NOTE)
         if seed_list and len(seed_list) > 1:
             real_per_seed = [
                 {
@@ -799,6 +884,19 @@ def run_audit(
                         "n_train_sampled": blk.get("n_train_sampled"),
                     }
                 )
+
+    ref_meta, headline_fallback = reconcile_reference_mode(
+        ref_meta,
+        per_canary,
+        toggle_failures,
+        has_ref_model=ref_model is not None,
+    )
+    if headline_fallback:
+        used_headline = headline_fallback
+    if toggle_failures:
+        audit_warnings.append(
+            f"{_TOGGLE_FAIL_WARNING} Last error: {toggle_failures[0]}."
+        )
 
     stability: dict[str, Any] | None = None
     if seed_list:
